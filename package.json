@@ -1,0 +1,39 @@
+{
+  "name": "@factory/platform-agent",
+  "version": "1.0.0",
+  "description": "Lightweight VPS agent — exposes REST API for platform orchestration",
+  "main": "dist/server.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" \"tests/**/*.ts\" --fix"
+  },
+  "dependencies": {
+    "fastify": "^5.3.0",
+    "@fastify/rate-limit": "^10.2.0",
+    "js-yaml": "^4.1.0",
+    "dockerode": "^4.0.4",
+    "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.34",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.7.0",
+    "vitest": "^3.0.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@4.12.0"
+}
