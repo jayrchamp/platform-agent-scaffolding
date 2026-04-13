@@ -35,8 +35,8 @@ RUN npm ci --omit=dev
 COPY --from=builder /build/dist/ dist/
 COPY package.json ./
 
-# Non-root user for security
-RUN addgroup -S agent && adduser -S agent -G agent
+# Non-root user for security (fixed UID/GID for predictable volume permissions)
+RUN addgroup -g 1001 -S agent && adduser -u 1001 -S agent -G agent
 USER agent
 
 # Health check (matches what platform-verification.ts expects)
