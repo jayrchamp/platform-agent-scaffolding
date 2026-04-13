@@ -47,6 +47,9 @@ playwright/.cache/
 # TypeScript
 *.tsbuildinfo
 
+# Local dev state (STATE_PATH=./data)
+data/
+
 # Electron
 out/
 release/

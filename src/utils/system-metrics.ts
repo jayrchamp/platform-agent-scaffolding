@@ -1,12 +1,18 @@
 // ── System Metrics Reader ───────────────────────────────────────────────────
 //
 // Reads CPU, RAM, disk, network, processes, and uptime from /proc and /sys.
-// Linux-only (Ubuntu on Droplet). No external dependencies.
+// Primary target: Linux (Ubuntu on Droplet).
+// On non-Linux (macOS dev), returns safe fallback values so the agent still starts.
 //
-// All readers are async for consistency, even though most are sync fs reads.
+// All readers are sync for simplicity (called from cache layer).
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { platform as osPlatform, cpus, totalmem, freemem, uptime as osUptime, loadavg } from 'node:os';
+
+// ── Platform detection ─────────────────────────────────────────────────────
+
+const IS_LINUX = osPlatform() === 'linux';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -74,19 +80,28 @@ export interface UptimeInfo {
 
 // ── CPU ────────────────────────────────────────────────────────────────────
 
-/** Previous CPU sample for delta calculation */
+/** Previous CPU sample for delta calculation (Linux only) */
 let prevCpuIdle = 0;
 let prevCpuTotal = 0;
 
 export function readCpuMetrics(): CpuMetrics {
+  if (!IS_LINUX) {
+    // macOS fallback: use os module (less precise but functional)
+    const avg = loadavg() as [number, number, number];
+    return {
+      usagePercent: 0, // can't reliably compute from os module
+      cores: cpus().length,
+      loadAverage: avg,
+    };
+  }
+
   const stat = readFileSync('/proc/stat', 'utf-8');
-  const cpuLine = stat.split('\n')[0]!; // "cpu  user nice system idle iowait irq softirq steal"
+  const cpuLine = stat.split('\n')[0]!;
   const parts = cpuLine.split(/\s+/).slice(1).map(Number);
 
-  const idle = parts[3]! + (parts[4] ?? 0); // idle + iowait
+  const idle = parts[3]! + (parts[4] ?? 0);
   const total = parts.reduce((a, b) => a + b, 0);
 
-  // Delta since last read
   const deltaIdle = idle - prevCpuIdle;
   const deltaTotal = total - prevCpuTotal;
 
@@ -97,19 +112,16 @@ export function readCpuMetrics(): CpuMetrics {
     ? Math.round(((deltaTotal - deltaIdle) / deltaTotal) * 1000) / 10
     : 0;
 
-  // Core count
   const coreLines = stat.split('\n').filter(l => /^cpu\d+/.test(l));
-
-  // Load average
-  const loadAvg = readFileSync('/proc/loadavg', 'utf-8').trim().split(/\s+/);
+  const loadAvgLine = readFileSync('/proc/loadavg', 'utf-8').trim().split(/\s+/);
 
   return {
     usagePercent,
     cores: coreLines.length,
     loadAverage: [
-      parseFloat(loadAvg[0]!),
-      parseFloat(loadAvg[1]!),
-      parseFloat(loadAvg[2]!),
+      parseFloat(loadAvgLine[0]!),
+      parseFloat(loadAvgLine[1]!),
+      parseFloat(loadAvgLine[2]!),
     ],
   };
 }
@@ -117,13 +129,29 @@ export function readCpuMetrics(): CpuMetrics {
 // ── Memory ─────────────────────────────────────────────────────────────────
 
 export function readMemoryMetrics(): MemoryMetrics {
+  if (!IS_LINUX) {
+    // macOS fallback
+    const totalMb = Math.round(totalmem() / 1024 / 1024);
+    const freeMb = Math.round(freemem() / 1024 / 1024);
+    const usedMb = totalMb - freeMb;
+    return {
+      totalMb,
+      usedMb,
+      freeMb,
+      availableMb: freeMb,
+      usagePercent: totalMb > 0 ? Math.round((usedMb / totalMb) * 1000) / 10 : 0,
+      swapTotalMb: 0,
+      swapUsedMb: 0,
+    };
+  }
+
   const meminfo = readFileSync('/proc/meminfo', 'utf-8');
   const values: Record<string, number> = {};
 
   for (const line of meminfo.split('\n')) {
     const match = line.match(/^(\w+):\s+(\d+)/);
     if (match) {
-      values[match[1]!] = parseInt(match[2]!, 10); // in kB
+      values[match[1]!] = parseInt(match[2]!, 10);
     }
   }
 
@@ -153,15 +181,29 @@ export function readMemoryMetrics(): MemoryMetrics {
 
 export function readDiskMetrics(): DiskMetrics {
   try {
-    const output = execSync("df -BG / | tail -1", { encoding: 'utf-8', timeout: 5000 });
+    // df -BG works on Linux; macOS uses df -g
+    const cmd = IS_LINUX ? "df -BG / | tail -1" : "df -g / | tail -1";
+    const output = execSync(cmd, { encoding: 'utf-8', timeout: 5000 });
     const parts = output.trim().split(/\s+/);
-    // Fields: Filesystem 1G-blocks Used Available Use% Mounted
-    const totalGb = parseInt(parts[1]!, 10) || 0;
-    const usedGb = parseInt(parts[2]!, 10) || 0;
-    const freeGb = parseInt(parts[3]!, 10) || 0;
-    const usagePercent = parseInt(parts[4]!, 10) || 0;
 
-    return { totalGb, usedGb, freeGb, usagePercent, mountPoint: '/' };
+    if (IS_LINUX) {
+      return {
+        totalGb: parseInt(parts[1]!, 10) || 0,
+        usedGb: parseInt(parts[2]!, 10) || 0,
+        freeGb: parseInt(parts[3]!, 10) || 0,
+        usagePercent: parseInt(parts[4]!, 10) || 0,
+        mountPoint: '/',
+      };
+    } else {
+      // macOS df -g: Filesystem Gblocks Used Available Capacity ...
+      return {
+        totalGb: parseInt(parts[1]!, 10) || 0,
+        usedGb: parseInt(parts[2]!, 10) || 0,
+        freeGb: parseInt(parts[3]!, 10) || 0,
+        usagePercent: parseInt(parts[4]!, 10) || 0,
+        mountPoint: '/',
+      };
+    }
   } catch {
     return { totalGb: 0, usedGb: 0, freeGb: 0, usagePercent: 0, mountPoint: '/' };
   }
@@ -170,8 +212,13 @@ export function readDiskMetrics(): DiskMetrics {
 // ── Network ────────────────────────────────────────────────────────────────
 
 export function readNetworkMetrics(): NetworkMetrics[] {
+  if (!IS_LINUX) {
+    // No /proc/net/dev on macOS — return empty (network metrics are VPS-focused)
+    return [];
+  }
+
   const netDev = readFileSync('/proc/net/dev', 'utf-8');
-  const lines = netDev.split('\n').slice(2); // skip headers
+  const lines = netDev.split('\n').slice(2);
   const results: NetworkMetrics[] = [];
 
   for (const line of lines) {
@@ -182,7 +229,6 @@ export function readNetworkMetrics(): NetworkMetrics[] {
     if (!iface || !rest) continue;
 
     const name = iface.trim();
-    // Skip loopback
     if (name === 'lo') continue;
 
     const values = rest.trim().split(/\s+/).map(Number);
@@ -202,20 +248,21 @@ export function readNetworkMetrics(): NetworkMetrics[] {
 
 export function readTopProcesses(limit = 10): ProcessInfo[] {
   try {
-    // ps with sorted output — most reliable cross-distro approach
-    const output = execSync(
-      `ps aux --sort=-%cpu | head -${limit + 1}`,
-      { encoding: 'utf-8', timeout: 5000 },
-    );
-    const lines = output.trim().split('\n').slice(1); // skip header
+    // macOS ps doesn't support --sort, use different syntax
+    const cmd = IS_LINUX
+      ? `ps aux --sort=-%cpu | head -${limit + 1}`
+      : `ps aux -r | head -${limit + 1}`;
+
+    const output = execSync(cmd, { encoding: 'utf-8', timeout: 5000 });
+    const lines = output.trim().split('\n').slice(1);
 
     return lines.map((line) => {
       const parts = line.trim().split(/\s+/);
       return {
         pid: parseInt(parts[1]!, 10),
-        name: parts.slice(10).join(' '), // command
+        name: parts.slice(10).join(' '),
         cpuPercent: parseFloat(parts[2]!) || 0,
-        memoryMb: parseFloat(parts[5]!) / 1024 || 0, // RSS in KB → MB
+        memoryMb: parseFloat(parts[5]!) / 1024 || 0,
         user: parts[0]!,
       };
     });
@@ -227,22 +274,26 @@ export function readTopProcesses(limit = 10): ProcessInfo[] {
 // ── Uptime ─────────────────────────────────────────────────────────────────
 
 export function readUptime(): UptimeInfo {
-  const raw = readFileSync('/proc/uptime', 'utf-8').trim();
-  const uptimeSeconds = Math.floor(parseFloat(raw.split(' ')[0]!));
+  let uptimeSeconds: number;
 
-  const loadAvgRaw = readFileSync('/proc/loadavg', 'utf-8').trim().split(/\s+/);
+  if (IS_LINUX && existsSync('/proc/uptime')) {
+    const raw = readFileSync('/proc/uptime', 'utf-8').trim();
+    uptimeSeconds = Math.floor(parseFloat(raw.split(' ')[0]!));
+  } else {
+    // macOS fallback
+    uptimeSeconds = Math.floor(osUptime());
+  }
 
-  // Boot time
+  const avg = IS_LINUX && existsSync('/proc/loadavg')
+    ? readFileSync('/proc/loadavg', 'utf-8').trim().split(/\s+/).map(parseFloat)
+    : loadavg();
+
   const bootTimestamp = Date.now() - uptimeSeconds * 1000;
 
   return {
     uptimeSeconds,
     uptimeFormatted: formatUptime(uptimeSeconds),
-    loadAverage: [
-      parseFloat(loadAvgRaw[0]!),
-      parseFloat(loadAvgRaw[1]!),
-      parseFloat(loadAvgRaw[2]!),
-    ],
+    loadAverage: [avg[0]!, avg[1]!, avg[2]!] as [number, number, number],
     bootTime: new Date(bootTimestamp).toISOString(),
   };
 }
