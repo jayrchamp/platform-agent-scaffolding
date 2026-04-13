@@ -25,6 +25,7 @@ beforeAll(async () => {
     statePath: tmpDir,
     logLevel: 'error',
     rateLimitMax: 1000,
+    postgres: { host: 'localhost', port: 5432, user: 'platform', password: '' },
   };
 
   app = await buildApp(config);

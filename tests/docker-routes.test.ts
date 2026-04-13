@@ -3,24 +3,19 @@
 // Tests the Docker module HTTP routes with mocked Dockerode.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { Pool } from 'pg';
 import type { FastifyInstance } from 'fastify';
 import Docker from 'dockerode';
 import { buildApp } from '../src/app.js';
 import { setDockerClient, resetDockerClient } from '../src/services/docker.js';
+import { setPgPool, resetPgPool } from '../src/services/postgres.js';
 import type { AgentConfig } from '../src/config.js';
 
 const TOKEN = 'test-docker-routes-token';
 const authHeaders = { authorization: `Bearer ${TOKEN}` };
-
-const testConfig: AgentConfig = {
-  port: 0,
-  host: '127.0.0.1',
-  authToken: TOKEN,
-  version: '1.0.0-test',
-  statePath: '/tmp/platform-test',
-  logLevel: 'error',
-  rateLimitMax: 1000,
-};
 
 // ── Mock ───────────────────────────────────────────────────────────────────
 
@@ -49,10 +44,25 @@ function setupMock(): void {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
+let tmpDir: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
+  tmpDir = mkdtempSync(join(tmpdir(), 'platform-docker-routes-'));
   setupMock();
+  setPgPool({ query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as Pool);
+
+  const testConfig = {
+    port: 0,
+    host: '127.0.0.1',
+    authToken: TOKEN,
+    version: '1.0.0-test',
+    statePath: tmpDir,
+    logLevel: 'error' as const,
+    rateLimitMax: 1000,
+    postgres: { host: 'localhost', port: 5432, user: 'platform', password: '' },
+  };
+
   app = await buildApp(testConfig);
   await app.ready();
 });
@@ -60,6 +70,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   resetDockerClient();
+  resetPgPool();
+  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 // ── Route tests ────────────────────────────────────────────────────────────

@@ -1,33 +1,47 @@
 // ── App & Health Tests ──────────────────────────────────────────────────────
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { Pool } from 'pg';
+import { vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
+import { setPgPool, resetPgPool } from '../src/services/postgres.js';
 import type { AgentConfig } from '../src/config.js';
-
-// ── Test config ────────────────────────────────────────────────────────────
-
-const testConfig: AgentConfig = {
-  port: 0, // random port for tests
-  host: '127.0.0.1',
-  authToken: 'test-secret-token-1234',
-  version: '1.0.0-test',
-  statePath: '/tmp/platform-test',
-  logLevel: 'error', // quiet during tests
-  rateLimitMax: 1000,
-};
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
+const AUTH_TOKEN = 'test-secret-token-1234';
+
+let tmpDir: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
-  app = await buildApp(testConfig);
+  tmpDir = mkdtempSync(join(tmpdir(), 'platform-app-'));
+  // Provide a no-op mock pool so postgres routes don't crash
+  setPgPool({ query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as Pool);
+
+  const config: AgentConfig = {
+    port: 0,
+    host: '127.0.0.1',
+    authToken: AUTH_TOKEN,
+    version: '1.0.0-test',
+    statePath: tmpDir,
+    logLevel: 'error',
+    rateLimitMax: 1000,
+    postgres: { host: 'localhost', port: 5432, user: 'platform', password: '' },
+  };
+
+  app = await buildApp(config);
   await app.ready();
 });
 
 afterAll(async () => {
   await app.close();
+  resetPgPool();
+  rmSync(tmpDir, { recursive: true, force: true });
 });
 
 // ── Health endpoint ────────────────────────────────────────────────────────
@@ -84,7 +98,7 @@ describe('Auth middleware on /api/*', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/system/metrics',
-      headers: { authorization: `Bearer ${testConfig.authToken}` },
+      headers: { authorization: `Bearer ${AUTH_TOKEN}` },
     });
     expect(res.statusCode).toBe(200);
   });
@@ -93,7 +107,7 @@ describe('Auth middleware on /api/*', () => {
 // ── Module routes exist ────────────────────────────────────────────────────
 
 describe('Module routes', () => {
-  const authHeaders = { authorization: `Bearer ${testConfig.authToken}` };
+  const authHeaders = { authorization: `Bearer ${AUTH_TOKEN}` };
 
   it('GET /api/system/metrics is reachable', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/system/metrics', headers: authHeaders });

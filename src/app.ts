@@ -8,12 +8,14 @@ import rateLimit from '@fastify/rate-limit';
 
 import type { AgentConfig } from './config.js';
 import { StateManager } from './services/state.js';
+import { initPostgres } from './services/postgres.js';
 import { authMiddleware } from './middleware/auth.js';
 import { systemModule } from './modules/system.js';
 import { dockerModule } from './modules/docker.js';
 import { stateModule } from './modules/state.js';
 import { authModule } from './modules/auth.js';
 import { agentModule } from './modules/agent.js';
+import { postgresModule } from './modules/postgres.js';
 
 // ── Build app ──────────────────────────────────────────────────────────────
 
@@ -37,6 +39,10 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
   const stateManager = new StateManager(config.statePath);
   stateManager.init();
   app.decorate('stateManager', stateManager);
+
+  // ── PostgreSQL pool (non-blocking — connects lazily on first query) ────
+
+  initPostgres(config.postgres);
 
   // ── Rate limiting ──────────────────────────────────────────────────────
 
@@ -67,6 +73,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     await authedScope.register(stateModule, { prefix: '/state' });
     await authedScope.register(authModule, { prefix: '/auth' });
     await authedScope.register(agentModule, { prefix: '/agent' });
+    await authedScope.register(postgresModule, { prefix: '/postgres' });
   }, { prefix: '/api' });
 
   return app;

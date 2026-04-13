@@ -10,6 +10,17 @@ import yaml from 'js-yaml';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface PostgresConfig {
+  /** PostgreSQL container hostname (default: platform-postgres on platform-net) */
+  host: string;
+  /** PostgreSQL port */
+  port: number;
+  /** PostgreSQL superuser */
+  user: string;
+  /** PostgreSQL superuser password */
+  password: string;
+}
+
 export interface AgentConfig {
   /** HTTP port the agent listens on */
   port: number;
@@ -25,6 +36,8 @@ export interface AgentConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   /** Rate limit: max requests per minute per IP */
   rateLimitMax: number;
+  /** PostgreSQL connection config */
+  postgres: PostgresConfig;
 }
 
 // ── YAML config file shape (matches bootstrap-scripts.ts output) ───────────
@@ -35,6 +48,7 @@ interface YamlConfig {
   logging?: { level?: string };
   state?: { path?: string };
   rateLimit?: { maxPerMinute?: number };
+  postgres?: { host?: string; port?: number; user?: string; password?: string };
 }
 
 // ── Config paths ───────────────────────────────────────────────────────────
@@ -97,6 +111,12 @@ export function loadConfig(): AgentConfig {
     statePath: env.STATE_PATH ?? yamlCfg.state?.path ?? '/var/lib/platform',
     logLevel: isLogLevel(logLevel) ? logLevel : 'info',
     rateLimitMax: toInt(env.RATE_LIMIT_MAX) ?? yamlCfg.rateLimit?.maxPerMinute ?? 100,
+    postgres: {
+      host: env.PG_HOST ?? yamlCfg.postgres?.host ?? 'platform-postgres',
+      port: toInt(env.PG_PORT) ?? yamlCfg.postgres?.port ?? 5432,
+      user: env.PG_USER ?? yamlCfg.postgres?.user ?? 'platform',
+      password: env.PG_PASSWORD ?? yamlCfg.postgres?.password ?? '',
+    },
   };
 }
 
