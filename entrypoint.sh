@@ -1,13 +1,13 @@
 #!/bin/sh
-# Ensure data directories exist and are writable by the agent user.
-# This runs as root before dropping to the 'agent' user.
+# Ensure data directories exist and are writable.
+# Runs as root (via docker run --user root).
+#
+# TODO: Once volume permissions are properly handled in bootstrap,
+#       restore su-exec agent to drop privileges here.
 
 STATE_PATH="${STATE_PATH:-/data}"
 
 mkdir -p "$STATE_PATH/appspecs" 2>/dev/null || true
-chown -R agent:agent "$STATE_PATH/appspecs" 2>/dev/null || true
-chown agent:agent "$STATE_PATH/operations.log" 2>/dev/null || true
-chown agent:agent "$STATE_PATH/agent.yaml" 2>/dev/null || true
 
-# Drop to agent user and run the app
-exec su-exec agent node dist/server.js
+# Run Node as the current user (root when --user root is set)
+exec node dist/server.js
