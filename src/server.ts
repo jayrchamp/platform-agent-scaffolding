@@ -5,6 +5,7 @@
 
 import { loadConfig } from './config.js';
 import { buildApp } from './app.js';
+import { runBootCleanup } from './services/boot-cleanup.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -15,6 +16,17 @@ async function main(): Promise<void> {
   }
 
   const app = await buildApp(config);
+
+  // ── Boot cleanup (before accepting requests) ───────────────────────────
+
+  const cleanup = runBootCleanup(app.stateManager, config.statePath, {
+    info: (msg) => app.log.info(msg),
+    warn: (msg) => app.log.warn(msg),
+  });
+
+  if (cleanup.staleOperations > 0 || cleanup.staleLocks > 0) {
+    app.log.info({ cleanup }, 'Boot cleanup completed');
+  }
 
   // ── Graceful shutdown ──────────────────────────────────────────────────
 
