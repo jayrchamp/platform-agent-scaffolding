@@ -1,24 +1,44 @@
 // ── System Module ───────────────────────────────────────────────────────────
 //
 // Exposes VPS system metrics: CPU, RAM, disk, network, processes, uptime.
-// Full implementation in Story 5.2.
+// Reads from /proc (Linux). Data is cached via metrics-cache for performance.
+//
+// Routes (all under /api/system, require auth):
+//   GET /metrics    — CPU %, RAM %, disk %, network I/O
+//   GET /processes  — top processes sorted by CPU usage
+//   GET /uptime     — uptime + load average + boot time
 
 import type { FastifyPluginAsync } from 'fastify';
+import {
+  getCachedMetrics,
+  getCachedProcesses,
+  getCachedUptime,
+  startMetricsRefresh,
+  stopMetricsRefresh,
+} from '../utils/metrics-cache.js';
 
 export const systemModule: FastifyPluginAsync = async (app) => {
-  // GET /api/system/metrics — CPU %, RAM %, disk %, network I/O
+  // Start background metrics refresh when module loads
+  startMetricsRefresh();
+
+  // Stop on server close
+  app.addHook('onClose', async () => {
+    stopMetricsRefresh();
+  });
+
+  // GET /api/system/metrics
   app.get('/metrics', async () => {
-    // TODO: Story 5.2 — read from /proc, cache periodically
-    return { stub: true, message: 'System metrics — not yet implemented (Story 5.2)' };
+    return getCachedMetrics();
   });
 
-  // GET /api/system/processes — top processes by CPU/RAM
-  app.get('/processes', async () => {
-    return { stub: true, message: 'Process list — not yet implemented (Story 5.2)' };
+  // GET /api/system/processes
+  app.get<{ Querystring: { limit?: string } }>('/processes', async (request) => {
+    const limit = Math.min(parseInt(request.query.limit ?? '10', 10) || 10, 50);
+    return { processes: getCachedProcesses(limit) };
   });
 
-  // GET /api/system/uptime — uptime + load average
+  // GET /api/system/uptime
   app.get('/uptime', async () => {
-    return { stub: true, message: 'Uptime — not yet implemented (Story 5.2)' };
+    return getCachedUptime();
   });
 };
