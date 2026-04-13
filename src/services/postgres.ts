@@ -681,7 +681,7 @@ export async function getDatabaseDetail(
       // Table stats
       const tableRes = await dbPool.query<{
         schemaname: string;
-        tablename: string;
+        relname: string;
         size_bytes: string;
         row_count: string;
         last_vacuum: string | null;
@@ -689,19 +689,19 @@ export async function getDatabaseDetail(
       }>(`
         SELECT
           schemaname,
-          tablename,
-          pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename))::text AS size_bytes,
+          relname,
+          pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(relname))::text AS size_bytes,
           n_live_tup::text AS row_count,
           last_vacuum::text,
           last_analyze::text
         FROM pg_stat_user_tables
-        ORDER BY pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename)) DESC
+        ORDER BY pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(relname)) DESC
         LIMIT 50
       `);
 
       tables = tableRes.rows.map((r) => ({
         schema: r.schemaname,
-        name: r.tablename,
+        name: r.relname,
         sizeMb: Math.round(Number(r.size_bytes) / 1024 / 1024 * 100) / 100,
         rowCount: parseInt(r.row_count, 10),
         lastVacuum: r.last_vacuum,

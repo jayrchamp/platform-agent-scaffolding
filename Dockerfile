@@ -27,6 +27,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# su-exec for dropping privileges in entrypoint
+RUN apk add --no-cache su-exec
+
 # Install production deps only
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
@@ -37,7 +40,10 @@ COPY package.json ./
 
 # Non-root user for security (fixed UID/GID for predictable volume permissions)
 RUN addgroup -g 1001 -S agent && adduser -u 1001 -S agent -G agent
-USER agent
+
+# Entrypoint: prepares data dirs as root, then drops to agent user
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Health check (matches what platform-verification.ts expects)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
@@ -45,4 +51,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 3100
 
-CMD ["node", "dist/server.js"]
+# Run as root — entrypoint fixes volume permissions then drops to agent via su-exec
+ENTRYPOINT ["/entrypoint.sh"]
