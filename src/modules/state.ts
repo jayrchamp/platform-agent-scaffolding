@@ -19,6 +19,7 @@
 
 import type { FastifyPluginAsync } from 'fastify';
 import type { AppSpec } from '../services/state.js';
+import { findAppContainer } from '../services/apps.js';
 
 export const stateModule: FastifyPluginAsync = async (app) => {
   const state = app.stateManager;
@@ -219,7 +220,22 @@ export const stateModule: FastifyPluginAsync = async (app) => {
 
   // GET /api/state/apps/states
   app.get('/apps/states', async () => {
-    return { states: state.listAppStates() };
+    const states = state.listAppStates();
+
+    // Enrich each state with container port info
+    const enriched = await Promise.all(
+      states.map(async (s) => {
+        try {
+          const container = await findAppContainer(s.name);
+          if (container) {
+            return { ...s, containerId: container.id, ports: container.ports, containerStatus: container.status };
+          }
+        } catch { /* skip enrichment */ }
+        return s;
+      }),
+    );
+
+    return { states: enriched };
   });
 
   // GET /api/state/apps/:name/state
@@ -229,6 +245,22 @@ export const stateModule: FastifyPluginAsync = async (app) => {
       reply.code(404).send({ error: `No runtime state for '${request.params.name}'` });
       return;
     }
+
+    // Enrich with container info (ports, container ID)
+    try {
+      const container = await findAppContainer(request.params.name);
+      if (container) {
+        return {
+          ...appState,
+          containerId: container.id,
+          ports: container.ports,
+          containerStatus: container.status,
+        };
+      }
+    } catch {
+      // Docker unavailable — return state without enrichment
+    }
+
     return appState;
   });
 
