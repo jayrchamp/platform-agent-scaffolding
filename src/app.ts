@@ -8,6 +8,7 @@ import rateLimit from '@fastify/rate-limit';
 
 import type { AgentConfig } from './config.js';
 import { StateManager } from './services/state.js';
+import { HealthMonitor } from './services/health-monitor.js';
 import { initPostgres } from './services/postgres.js';
 import { authMiddleware } from './middleware/auth.js';
 import { systemModule } from './modules/system.js';
@@ -45,6 +46,17 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
   const stateManager = new StateManager(config.statePath);
   stateManager.init();
   app.decorate('stateManager', stateManager);
+
+  // ── Health monitor (background polling for running apps) ──────────────
+
+  const healthMonitor = new HealthMonitor(stateManager);
+  healthMonitor.start();
+  app.decorate('healthMonitor', healthMonitor);
+
+  // Graceful shutdown: stop monitor before closing
+  app.addHook('onClose', async () => {
+    healthMonitor.stop();
+  });
 
   // ── PostgreSQL pool (non-blocking — connects lazily on first query) ────
 
@@ -92,5 +104,6 @@ declare module 'fastify' {
   interface FastifyInstance {
     config: AgentConfig;
     stateManager: StateManager;
+    healthMonitor: HealthMonitor;
   }
 }

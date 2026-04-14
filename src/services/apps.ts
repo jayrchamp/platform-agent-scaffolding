@@ -13,6 +13,7 @@ import {
   type CreateContainerOptions,
 } from './docker.js';
 import { buildFromRepo } from './build.js';
+import type { HealthMonitor } from './health-monitor.js';
 import type {
   StateManager,
   AppSpec,
@@ -110,6 +111,7 @@ function specToContainerOptions(spec: AppSpec, imageOverride?: string): CreateCo
 export async function deployApp(
   stateManager: StateManager,
   appName: string,
+  healthMonitor?: HealthMonitor,
 ): Promise<AppLifecycleResult> {
   const spec = stateManager.getAppSpec(appName);
   if (!spec) {
@@ -182,6 +184,9 @@ export async function deployApp(
     // Transition to running
     stateManager.transitionAppState(appName, 'running');
 
+    // Start health monitoring
+    healthMonitor?.startMonitoring(appName);
+
     // Log success
     stateManager.logOperation({
       id: opId,
@@ -225,18 +230,20 @@ export async function deployApp(
 export async function startApp(
   stateManager: StateManager,
   appName: string,
+  healthMonitor?: HealthMonitor,
 ): Promise<AppLifecycleResult> {
   const container = await findAppContainer(appName);
 
   if (!container) {
     // No container exists — do a full deploy
-    return deployApp(stateManager, appName);
+    return deployApp(stateManager, appName, healthMonitor);
   }
 
   try {
     stateManager.transitionAppState(appName, 'deploying');
     await containerAction(container.id, 'start');
     stateManager.transitionAppState(appName, 'running');
+    healthMonitor?.startMonitoring(appName);
 
     stateManager.logOperation({
       id: `op_start_${appName}_${Date.now()}`,
@@ -261,15 +268,18 @@ export async function startApp(
 export async function stopApp(
   stateManager: StateManager,
   appName: string,
+  healthMonitor?: HealthMonitor,
 ): Promise<AppLifecycleResult> {
   const container = await findAppContainer(appName);
 
   if (!container) {
+    healthMonitor?.stopMonitoring(appName);
     stateManager.transitionAppState(appName, 'stopped');
     return { success: true, appName, action: 'stop', state: 'stopped' };
   }
 
   try {
+    healthMonitor?.stopMonitoring(appName);
     await containerAction(container.id, 'stop');
     stateManager.transitionAppState(appName, 'stopped');
 
@@ -295,17 +305,21 @@ export async function stopApp(
 export async function restartApp(
   stateManager: StateManager,
   appName: string,
+  healthMonitor?: HealthMonitor,
 ): Promise<AppLifecycleResult> {
   const container = await findAppContainer(appName);
 
   if (!container) {
-    return deployApp(stateManager, appName);
+    return deployApp(stateManager, appName, healthMonitor);
   }
 
   try {
     stateManager.transitionAppState(appName, 'updating');
     await containerAction(container.id, 'restart');
     stateManager.transitionAppState(appName, 'running');
+    // Restart monitoring (resets failure count via stopMonitoring + startMonitoring)
+    healthMonitor?.stopMonitoring(appName);
+    healthMonitor?.startMonitoring(appName);
 
     stateManager.logOperation({
       id: `op_restart_${appName}_${Date.now()}`,

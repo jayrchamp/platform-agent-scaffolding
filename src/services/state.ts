@@ -144,6 +144,12 @@ export const VALID_STATE_TRANSITIONS: Record<AppActualState, AppActualState[]> =
   error: ['deploying', 'stopped'],
 };
 
+export interface AppHealthStatus {
+  status: 'healthy' | 'unhealthy';
+  lastCheckedAt: string;
+  message?: string;
+}
+
 export interface AppRuntimeState {
   /** App name (matches AppSpec name) */
   name: string;
@@ -153,6 +159,8 @@ export interface AppRuntimeState {
   updatedAt: string;
   /** Error message if in error state */
   error?: string;
+  /** Health check result (populated by health monitor) */
+  health?: AppHealthStatus;
 }
 
 export interface OperationLogEntry {
@@ -325,6 +333,11 @@ export class StateManager {
     return version;
   }
 
+  /** Returns the path to the build artifacts directory for an app */
+  getBuildsPath(name: string): string {
+    return join(this.basePath, 'builds', name);
+  }
+
   deleteAppSpec(name: string): boolean {
     if (!this.appspecs.has(name)) return false;
 
@@ -477,6 +490,19 @@ export class StateManager {
     this.persistRuntimeState(name, state);
 
     return state;
+  }
+
+  /**
+   * Update the health status for an app without changing its state.
+   * Used by the health monitor.
+   */
+  setAppHealth(name: string, health: AppHealthStatus): void {
+    const current = this.runtimeStates.get(name);
+    if (!current) return;
+
+    const updated: AppRuntimeState = { ...current, health };
+    this.runtimeStates.set(name, updated);
+    this.persistRuntimeState(name, updated);
   }
 
   /** Remove runtime state (e.g., on app deletion) */
