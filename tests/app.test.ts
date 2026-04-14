@@ -159,8 +159,8 @@ describe('Module routes', () => {
       payload: { image: 'my-app:latest' },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().name).toBe('my-app');
-    expect(res.json().image).toBe('my-app:latest');
+    expect(res.json().spec.name).toBe('my-app');
+    expect(res.json().spec.image).toBe('my-app:latest');
   });
 
   it('GET /api/state/operations is reachable', async () => {

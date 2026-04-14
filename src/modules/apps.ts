@@ -40,7 +40,7 @@ export const appsModule: FastifyPluginAsync = async (app) => {
     const { name } = request.params;
 
     // Extend timeout for long builds (5 min)
-    request.raw.setTimeout(300_000);
+    request.raw.setTimeout?.(300_000);
 
     const spec = state.getAppSpec(name);
     if (!spec) {
