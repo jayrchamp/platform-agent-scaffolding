@@ -17,6 +17,7 @@ import { authModule } from './modules/auth.js';
 import { agentModule } from './modules/agent.js';
 import { postgresModule } from './modules/postgres.js';
 import { appsModule } from './modules/apps.js';
+import { setBuildsBase } from './services/build.js';
 
 // ── Build app ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,10 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
   // ── Decorate with config ───────────────────────────────────────────────
 
   app.decorate('config', config);
+
+  // ── Set builds directory from config ──────────────────────────────────
+
+  setBuildsBase(config.statePath);
 
   // ── State manager (init directories + load from disk) ──────────────────
 

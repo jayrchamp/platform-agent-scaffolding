@@ -17,7 +17,12 @@ const exec = promisify(execFile);
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const BUILDS_BASE = '/var/lib/platform/builds';
+let BUILDS_BASE = '/var/lib/platform/builds';
+
+/** Set the builds base directory (called at agent boot from config.statePath) */
+export function setBuildsBase(statePath: string): void {
+  BUILDS_BASE = path.join(statePath, 'builds');
+}
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

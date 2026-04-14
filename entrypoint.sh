@@ -15,7 +15,9 @@ STATE_PATH="${STATE_PATH:-/data}"
 # NEVER chown $STATE_PATH recursively — it's /opt/platform which also contains
 # postgres/data (owned by UID 70), traefik/certs, etc.
 mkdir -p "$STATE_PATH/appspecs" 2>/dev/null || true
+mkdir -p "$STATE_PATH/builds" 2>/dev/null || true
 chown -R agent:agent "$STATE_PATH/appspecs" 2>/dev/null || true
+chown -R agent:agent "$STATE_PATH/builds" 2>/dev/null || true
 chown -R agent:agent /logs 2>/dev/null || true
 
 # ── Docker socket access ────────────────────────────────────────────────────
