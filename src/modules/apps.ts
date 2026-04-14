@@ -4,14 +4,17 @@
 // orchestrates container creation/start/stop/restart via the apps service.
 //
 // Routes (all under /api/apps, require auth):
-//   POST   /:name/deploy   — deploy (create container from spec + start)
-//   POST   /:name/start    — start a stopped container
-//   POST   /:name/stop     — stop a running container
-//   POST   /:name/restart  — restart a running container
-//   GET    /:name/logs     — tail container logs
-//   DELETE /:name          — delete app (container + appspec + builds)
+//   POST   /:name/deploy      — deploy (create container from spec + start)
+//   POST   /:name/start       — start a stopped container
+//   POST   /:name/stop        — stop a running container
+//   POST   /:name/restart     — restart a running container
+//   GET    /:name/logs        — tail container logs
+//   GET    /:name/build-log   — read build log (streaming deploy output)
+//   DELETE /:name             — delete app (container + volumes + appspec + builds + optional PG cleanup)
 
-import { rmSync, existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { rmSync, existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FastifyPluginAsync } from 'fastify';
 import {
@@ -23,6 +26,9 @@ import {
   findAppContainer,
 } from '../services/apps.js';
 import { containerAction } from '../services/docker.js';
+import { getBuildLogPath } from '../services/build.js';
+
+const exec = promisify(execFile);
 
 export const appsModule: FastifyPluginAsync = async (app) => {
   const state = app.stateManager;
@@ -120,7 +126,25 @@ export const appsModule: FastifyPluginAsync = async (app) => {
     return { appName: name, logs: result.logs };
   });
 
-  // DELETE /api/apps/:name — full teardown: container + appspec + builds
+  // GET /api/apps/:name/build-log — returns full content of the latest build log
+  app.get<{ Params: { name: string } }>('/:name/build-log', async (request) => {
+    const { name } = request.params;
+    const logPath = getBuildLogPath(name);
+
+    if (!existsSync(logPath)) {
+      return { log: '', size: 0 };
+    }
+
+    try {
+      const stat = statSync(logPath);
+      const log = readFileSync(logPath, 'utf-8');
+      return { log, size: stat.size };
+    } catch {
+      return { log: '', size: 0 };
+    }
+  });
+
+  // DELETE /api/apps/:name — full teardown: container + volumes + appspec + builds + optional PG cleanup
   app.delete<{ Params: { name: string } }>('/:name', async (request, reply) => {
     const { name } = request.params;
 
@@ -132,24 +156,49 @@ export const appsModule: FastifyPluginAsync = async (app) => {
 
     const errors: string[] = [];
 
-    // 1. Stop and remove container if it exists
+    // 1. Stop and remove container + anonymous volumes
     try {
       const container = await findAppContainer(name);
       if (container) {
-        await containerAction(container.id, 'remove');
+        await containerAction(container.id, 'remove', { removeVolumes: true });
       }
     } catch (err) {
       errors.push(`Container removal failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // 2. Stop health monitoring + remove runtime state
+    // 2. PostgreSQL cleanup — drop database and user if configured
+    if (spec.postgres) {
+      const { dbName, user } = spec.postgres;
+      if (dbName) {
+        try {
+          await exec('docker', [
+            'exec', 'platform-postgres',
+            'psql', '-U', 'postgres', '-c', `DROP DATABASE IF EXISTS "${dbName}";`,
+          ], { timeout: 30_000 });
+        } catch (err) {
+          errors.push(`PG database cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      if (user) {
+        try {
+          await exec('docker', [
+            'exec', 'platform-postgres',
+            'psql', '-U', 'postgres', '-c', `DROP USER IF EXISTS "${user}";`,
+          ], { timeout: 30_000 });
+        } catch (err) {
+          errors.push(`PG user cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
+    // 3. Stop health monitoring + remove runtime state
     monitor.stopMonitoring(name);
     state.removeAppState(name);
 
-    // 3. Remove AppSpec + all versions from disk
+    // 4. Remove AppSpec + all versions from disk
     state.deleteAppSpec(name);
 
-    // 4. Remove build artifacts
+    // 5. Remove build artifacts
     try {
       const buildsDir = app.stateManager.getBuildsPath(name);
       if (buildsDir && existsSync(buildsDir)) {

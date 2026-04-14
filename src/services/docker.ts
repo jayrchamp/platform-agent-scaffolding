@@ -195,6 +195,7 @@ export async function createContainer(options: CreateContainerOptions): Promise<
 export async function containerAction(
   nameOrId: string,
   action: 'start' | 'stop' | 'restart' | 'remove',
+  options?: { removeVolumes?: boolean },
 ): Promise<ContainerActionResult> {
   const d = getDocker();
   const container = d.getContainer(nameOrId);
@@ -212,7 +213,7 @@ export async function containerAction(
         break;
       case 'remove':
         await container.stop({ t: 10 }).catch(() => {}); // might already be stopped
-        await container.remove({ force: true });
+        await container.remove({ force: true, v: options?.removeVolumes ?? false });
         break;
     }
     return { containerId: nameOrId, action, success: true };
