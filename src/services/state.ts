@@ -236,6 +236,7 @@ export class StateManager {
   /** Initialize directories, migrate legacy data, load state from disk */
   init(): void {
     mkdirSync(this.appspecsDir, { recursive: true });
+    mkdirSync(join(this.basePath, 'builds'), { recursive: true });
 
     // Migrate legacy YAML files if present
     this.migrateLegacySpecs();
