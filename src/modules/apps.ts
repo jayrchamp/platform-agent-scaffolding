@@ -1,0 +1,112 @@
+// ── Apps Module ──────────────────────────────────────────────────────────────
+//
+// High-level app lifecycle actions. Uses AppSpec as the source of truth and
+// orchestrates container creation/start/stop/restart via the apps service.
+//
+// Routes (all under /api/apps, require auth):
+//   POST /apps/:name/deploy   — deploy (create container from spec + start)
+//   POST /apps/:name/start    — start a stopped container
+//   POST /apps/:name/stop     — stop a running container
+//   POST /apps/:name/restart  — restart a running container
+//   GET  /apps/:name/logs     — tail container logs
+
+import type { FastifyPluginAsync } from 'fastify';
+import {
+  deployApp,
+  startApp,
+  stopApp,
+  restartApp,
+  getAppLogs,
+} from '../services/apps.js';
+
+export const appsModule: FastifyPluginAsync = async (app) => {
+  const state = app.stateManager;
+
+  // POST /api/apps/:name/deploy
+  app.post<{ Params: { name: string } }>('/apps/:name/deploy', async (request, reply) => {
+    const { name } = request.params;
+
+    const spec = state.getAppSpec(name);
+    if (!spec) {
+      reply.code(404).send({ error: `AppSpec '${name}' not found` });
+      return;
+    }
+
+    const result = await deployApp(state, name);
+    if (!result.success) {
+      reply.code(500).send(result);
+      return;
+    }
+    return result;
+  });
+
+  // POST /api/apps/:name/start
+  app.post<{ Params: { name: string } }>('/apps/:name/start', async (request, reply) => {
+    const { name } = request.params;
+
+    const spec = state.getAppSpec(name);
+    if (!spec) {
+      reply.code(404).send({ error: `AppSpec '${name}' not found` });
+      return;
+    }
+
+    const result = await startApp(state, name);
+    if (!result.success) {
+      reply.code(500).send(result);
+      return;
+    }
+    return result;
+  });
+
+  // POST /api/apps/:name/stop
+  app.post<{ Params: { name: string } }>('/apps/:name/stop', async (request, reply) => {
+    const { name } = request.params;
+
+    const spec = state.getAppSpec(name);
+    if (!spec) {
+      reply.code(404).send({ error: `AppSpec '${name}' not found` });
+      return;
+    }
+
+    const result = await stopApp(state, name);
+    if (!result.success) {
+      reply.code(500).send(result);
+      return;
+    }
+    return result;
+  });
+
+  // POST /api/apps/:name/restart
+  app.post<{ Params: { name: string } }>('/apps/:name/restart', async (request, reply) => {
+    const { name } = request.params;
+
+    const spec = state.getAppSpec(name);
+    if (!spec) {
+      reply.code(404).send({ error: `AppSpec '${name}' not found` });
+      return;
+    }
+
+    const result = await restartApp(state, name);
+    if (!result.success) {
+      reply.code(500).send(result);
+      return;
+    }
+    return result;
+  });
+
+  // GET /api/apps/:name/logs
+  app.get<{
+    Params: { name: string };
+    Querystring: { tail?: string };
+  }>('/apps/:name/logs', async (request, reply) => {
+    const { name } = request.params;
+    const tail = Math.min(parseInt(request.query.tail ?? '100', 10) || 100, 1000);
+
+    const result = await getAppLogs(name, tail);
+    if (!result.found) {
+      reply.code(404).send({ error: `No container found for app '${name}'` });
+      return;
+    }
+    return { appName: name, logs: result.logs };
+  });
+};

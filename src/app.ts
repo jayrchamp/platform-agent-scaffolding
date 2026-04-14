@@ -16,6 +16,7 @@ import { stateModule } from './modules/state.js';
 import { authModule } from './modules/auth.js';
 import { agentModule } from './modules/agent.js';
 import { postgresModule } from './modules/postgres.js';
+import { appsModule } from './modules/apps.js';
 
 // ── Build app ──────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     await authedScope.register(authModule, { prefix: '/auth' });
     await authedScope.register(agentModule, { prefix: '/agent' });
     await authedScope.register(postgresModule, { prefix: '/postgres' });
+    await authedScope.register(appsModule, { prefix: '/apps' });
   }, { prefix: '/api' });
 
   return app;
