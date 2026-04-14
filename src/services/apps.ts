@@ -61,10 +61,16 @@ function specToContainerOptions(spec: AppSpec, imageOverride?: string): CreateCo
     }
   }
 
-  // Port mapping: use static hostPort if configured, otherwise let Docker pick
+  // Port mapping: use static hostPort if configured, otherwise let Docker pick.
+  // exposePortPublicly controls the bind address:
+  //   true  (default) → 0.0.0.0 — accessible from any IP including public
+  //   false           → 127.0.0.1 — SSH tunnel only, not reachable from public internet
   const ports: Record<string, string> = {};
   if (spec.port) {
-    ports[`${spec.port}/tcp`] = spec.hostPort ? `0.0.0.0:${spec.hostPort}` : `0.0.0.0:0`;
+    const bindAddress = spec.exposePortPublicly === false ? '127.0.0.1' : '0.0.0.0';
+    ports[`${spec.port}/tcp`] = spec.hostPort
+      ? `${bindAddress}:${spec.hostPort}`
+      : `${bindAddress}:0`;
   }
 
   // Labels for Traefik routing
