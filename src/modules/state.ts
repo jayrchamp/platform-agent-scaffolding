@@ -52,9 +52,12 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     const body = request.body ?? {};
 
     const existing = state.getAppSpec(name);
+    const buildStrategy = body.buildStrategy ?? existing?.buildStrategy ?? 'dockerfile';
     const image = body.image ?? existing?.image;
-    if (!image) {
-      reply.code(400).send({ error: 'image is required when creating a new AppSpec' });
+
+    // image is only required for 'image' strategy
+    if (buildStrategy === 'image' && !image) {
+      reply.code(400).send({ error: "image is required when buildStrategy is 'image'" });
       return;
     }
 
@@ -62,6 +65,7 @@ export const stateModule: FastifyPluginAsync = async (app) => {
       ...existing,
       ...body,
       name, // name comes from URL, not body
+      buildStrategy,
       image,
       desiredState: body.desiredState ?? existing?.desiredState ?? 'running',
       createdAt: existing?.createdAt ?? new Date().toISOString(),

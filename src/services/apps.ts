@@ -12,6 +12,7 @@ import {
   type ContainerInfo,
   type CreateContainerOptions,
 } from './docker.js';
+import { buildFromRepo } from './build.js';
 import type {
   StateManager,
   AppSpec,
@@ -46,7 +47,7 @@ export async function findAppContainer(appName: string): Promise<ContainerInfo |
 
 // ── Build CreateContainerOptions from AppSpec ──────────────────────────────
 
-function specToContainerOptions(spec: AppSpec): CreateContainerOptions {
+function specToContainerOptions(spec: AppSpec, imageOverride?: string): CreateContainerOptions {
   const env: string[] = [];
 
   // Env vars from AppSpec
@@ -83,9 +84,14 @@ function specToContainerOptions(spec: AppSpec): CreateContainerOptions {
     }
   }
 
+  const finalImage = imageOverride ?? spec.image;
+  if (!finalImage) {
+    throw new Error(`No image available for app '${spec.name}'. Build may have failed.`);
+  }
+
   const options: CreateContainerOptions = {
     name: containerName(spec.name),
-    image: spec.image,
+    image: finalImage,
     env,
     ports,
     network: 'platform-net',
@@ -124,6 +130,33 @@ export async function deployApp(
     // Transition to deploying
     stateManager.transitionAppState(appName, 'deploying');
 
+    let imageTag: string | undefined;
+
+    // ── Build step (if dockerfile strategy) ──
+    const strategy = spec.buildStrategy ?? 'dockerfile';
+    if (strategy === 'dockerfile') {
+      if (!spec.repo?.url) {
+        throw new Error('Cannot build from Dockerfile: no repo URL configured');
+      }
+
+      // Get current version for image tagging
+      const meta = stateManager.getAppSpecMeta(appName);
+      const version = meta?.currentVersion ?? 1;
+
+      const buildResult = await buildFromRepo(
+        appName,
+        spec.repo.url,
+        spec.repo.ref ?? 'main',
+        version,
+      );
+
+      if (!buildResult.success) {
+        throw new Error(`Build failed: ${buildResult.error}`);
+      }
+
+      imageTag = buildResult.imageTag;
+    }
+
     // Remove existing container if any
     const existing = await findAppContainer(appName);
     if (existing) {
@@ -131,7 +164,7 @@ export async function deployApp(
     }
 
     // Create and start new container
-    const options = specToContainerOptions(spec);
+    const options = specToContainerOptions(spec, imageTag);
     const container = await createContainer(options);
 
     // Transition to running
@@ -145,7 +178,7 @@ export async function deployApp(
       status: 'completed',
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      result: `Container ${container.id} started`,
+      result: `Container ${container.id} started${imageTag ? ` (built ${imageTag})` : ''}`,
     });
 
     return {

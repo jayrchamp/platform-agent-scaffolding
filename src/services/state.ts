@@ -33,6 +33,8 @@ import yaml from 'js-yaml';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 /** AppSpec as persisted on disk (agent-side source of truth) */
+export type AppSpecBuildStrategy = 'dockerfile' | 'image';
+
 export interface AppSpec {
   /** Unique app name (used as directory name) */
   name: string;
@@ -42,8 +44,10 @@ export interface AppSpec {
     ref: string;
     isPrivate: boolean;
   };
-  /** Docker image to deploy */
-  image: string;
+  /** Docker image (required for 'image' strategy, set by agent after build for 'dockerfile') */
+  image?: string;
+  /** How to obtain the Docker image (default: 'dockerfile') */
+  buildStrategy: AppSpecBuildStrategy;
   /** Port the app listens on inside the container */
   port?: number;
   /** Desired operational state */
@@ -651,6 +655,7 @@ export class StateManager {
         const spec: AppSpec = {
           name: legacy.name,
           image: legacy.image,
+          buildStrategy: legacy.image ? 'image' : 'dockerfile',
           port: legacy.port,
           desiredState: legacy.desiredState ?? 'running',
           createdAt: legacy.createdAt ?? new Date().toISOString(),
