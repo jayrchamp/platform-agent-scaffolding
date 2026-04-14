@@ -60,10 +60,10 @@ function specToContainerOptions(spec: AppSpec, imageOverride?: string): CreateCo
     }
   }
 
-  // Port mapping
+  // Port mapping: use static hostPort if configured, otherwise let Docker pick
   const ports: Record<string, string> = {};
   if (spec.port) {
-    ports[`${spec.port}/tcp`] = `0.0.0.0:0`; // let Docker pick a host port
+    ports[`${spec.port}/tcp`] = spec.hostPort ? `0.0.0.0:${spec.hostPort}` : `0.0.0.0:0`;
   }
 
   // Labels for Traefik routing
@@ -166,6 +166,18 @@ export async function deployApp(
     // Create and start new container
     const options = specToContainerOptions(spec, imageTag);
     const container = await createContainer(options);
+
+    // If no hostPort was configured, persist the randomly assigned one so it stays stable on future deploys
+    if (!spec.hostPort) {
+      const assignedPort = container.ports.find(p => p.hostPort)?.hostPort;
+      if (assignedPort) {
+        const updatedSpec = { ...spec, hostPort: assignedPort };
+        stateManager.saveAppSpec(updatedSpec, {
+          changedBy: 'system',
+          changeDescription: `Auto-assigned public port ${assignedPort} on first deploy`,
+        });
+      }
+    }
 
     // Transition to running
     stateManager.transitionAppState(appName, 'running');

@@ -159,6 +159,26 @@ export async function createContainer(options: CreateContainerOptions): Promise<
   // Fetch full info to return
   const info = await container.inspect();
 
+  // Parse actual port bindings from inspect result
+  const ports: PortMapping[] = [];
+  const bindings = info.NetworkSettings?.Ports ?? {};
+  for (const [portProto, hostBindings] of Object.entries(bindings)) {
+    const [containerPortStr, protocol] = portProto.split('/');
+    const containerPort = parseInt(containerPortStr ?? '0', 10);
+    if (!hostBindings || hostBindings.length === 0) {
+      ports.push({ containerPort, protocol: protocol ?? 'tcp' });
+    } else {
+      for (const b of hostBindings) {
+        ports.push({
+          containerPort,
+          hostPort: b.HostPort ? parseInt(b.HostPort, 10) : undefined,
+          hostIp: b.HostIp || undefined,
+          protocol: protocol ?? 'tcp',
+        });
+      }
+    }
+  }
+
   return {
     id: info.Id.slice(0, 12),
     name: info.Name.replace(/^\//, ''),
@@ -166,7 +186,7 @@ export async function createContainer(options: CreateContainerOptions): Promise<
     state: info.State.Status,
     status: info.State.Running ? `Up since ${info.State.StartedAt}` : info.State.Status,
     createdAt: info.Created,
-    ports: [],
+    ports,
     labels: info.Config.Labels ?? {},
     networkMode: info.HostConfig.NetworkMode ?? 'default',
   };

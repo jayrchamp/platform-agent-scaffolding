@@ -50,6 +50,8 @@ export interface AppSpec {
   buildStrategy: AppSpecBuildStrategy;
   /** Port the app listens on inside the container */
   port?: number;
+  /** Port exposed on the host (static). If not set, Docker picks a random port. */
+  hostPort?: number;
   /** Desired operational state */
   desiredState: 'running' | 'stopped';
   /** Domain(s) for Traefik routing */
