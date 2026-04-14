@@ -29,7 +29,8 @@ FROM node:22-alpine
 RUN addgroup -g 10001 agent && adduser -u 10001 -G agent -s /bin/sh -D agent
 
 # su-exec for privilege drop in entrypoint (Alpine equivalent of gosu)
-RUN apk add --no-cache su-exec
+# git for cloning app repos during dockerfile-based builds
+RUN apk add --no-cache su-exec git
 
 WORKDIR /app
 
