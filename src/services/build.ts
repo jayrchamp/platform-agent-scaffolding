@@ -192,7 +192,7 @@ export async function buildImage(
       };
     }
 
-    const dockerArgs = ['build', '-t', imageTag, '-t', latestTag, '--no-cache', '--progress=plain', '.'];
+    const dockerArgs = ['build', '-t', imageTag, '-t', latestTag, '--no-cache', '.'];
 
     if (logPath) {
       await runCommandWithLog('docker', dockerArgs, { cwd: buildDir, timeout: 600_000 }, logPath);
