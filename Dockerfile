@@ -31,7 +31,10 @@ RUN addgroup -g 10001 agent && adduser -u 10001 -G agent -s /bin/sh -D agent
 # su-exec for privilege drop in entrypoint (Alpine equivalent of gosu)
 # git for cloning app repos during dockerfile-based builds
 # docker-cli for building images from Dockerfiles (talks to host Docker via mounted socket)
-RUN apk add --no-cache su-exec git docker-cli
+# procps for full `ps aux --sort` support (BusyBox ps is too limited)
+# openssh-client for git clone over SSH (git@github.com:... URLs)
+# curl for health checks and debugging
+RUN apk add --no-cache su-exec git docker-cli procps openssh-client curl
 
 WORKDIR /app
 

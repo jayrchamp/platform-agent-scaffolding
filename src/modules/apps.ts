@@ -23,8 +23,12 @@ export const appsModule: FastifyPluginAsync = async (app) => {
   const state = app.stateManager;
 
   // POST /api/apps/:name/deploy
+  // Deploy involves git clone + docker build — can take several minutes
   app.post<{ Params: { name: string } }>('/:name/deploy', async (request, reply) => {
     const { name } = request.params;
+
+    // Extend timeout for long builds (5 min)
+    request.raw.setTimeout(300_000);
 
     const spec = state.getAppSpec(name);
     if (!spec) {
