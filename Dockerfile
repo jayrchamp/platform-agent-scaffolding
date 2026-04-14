@@ -30,7 +30,8 @@ RUN addgroup -g 10001 agent && adduser -u 10001 -G agent -s /bin/sh -D agent
 
 # su-exec for privilege drop in entrypoint (Alpine equivalent of gosu)
 # git for cloning app repos during dockerfile-based builds
-RUN apk add --no-cache su-exec git
+# docker-cli for building images from Dockerfiles (talks to host Docker via mounted socket)
+RUN apk add --no-cache su-exec git docker-cli
 
 WORKDIR /app
 
