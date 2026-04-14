@@ -159,6 +159,16 @@ export async function deployApp(
       imageTag = buildResult.imageTag;
     }
 
+    // Guard: ensure hostPort isn't already claimed by another app
+    if (spec.hostPort) {
+      const conflict = stateManager.checkHostPortConflict(spec.hostPort, appName);
+      if (conflict) {
+        throw new Error(
+          `Port ${spec.hostPort} is already assigned to app '${conflict}'. Choose a different public port.`,
+        );
+      }
+    }
+
     // Remove existing container if any
     const existing = await findAppContainer(appName);
     if (existing) {

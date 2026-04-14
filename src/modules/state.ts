@@ -73,6 +73,17 @@ export const stateModule: FastifyPluginAsync = async (app) => {
       updatedAt: new Date().toISOString(),
     };
 
+    // Guard: hostPort must be unique across all apps
+    if (spec.hostPort) {
+      const conflict = state.checkHostPortConflict(spec.hostPort, name);
+      if (conflict) {
+        reply.code(409).send({
+          error: `Port ${spec.hostPort} is already assigned to app '${conflict}'. Choose a different public port.`,
+        });
+        return;
+      }
+    }
+
     // Remove extra fields that aren't part of AppSpec
     const { changeDescription, changedBy, ...cleanBody } = body;
     void cleanBody;

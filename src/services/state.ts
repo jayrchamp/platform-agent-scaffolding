@@ -267,6 +267,18 @@ export class StateManager {
     return Array.from(this.appspecs.values()).map((e) => e.current);
   }
 
+  /**
+   * Returns the name of the app already using `hostPort`, or null if free.
+   * Skips `excludeName` (the app being saved/deployed itself).
+   */
+  checkHostPortConflict(hostPort: number, excludeName: string): string | null {
+    for (const [name, entry] of this.appspecs) {
+      if (name === excludeName) continue;
+      if (entry.current.hostPort === hostPort) return name;
+    }
+    return null;
+  }
+
   getAppSpec(name: string): AppSpec | undefined {
     return this.appspecs.get(name)?.current;
   }
