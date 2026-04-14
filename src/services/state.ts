@@ -52,6 +52,13 @@ export interface AppSpec {
   port?: number;
   /** Port exposed on the host (static). If not set, Docker picks a random port. */
   hostPort?: number;
+  /**
+   * Whether the host port is accessible from the public network (0.0.0.0 binding).
+   * - true  → Docker binds to 0.0.0.0:hostPort — accessible via IP:port from anywhere
+   * - false → Docker binds to 127.0.0.1:hostPort — only accessible via SSH tunnel (production default)
+   * Defaults to true for backwards compatibility with existing apps.
+   */
+  exposePortPublicly?: boolean;
   /** Desired operational state */
   desiredState: 'running' | 'stopped';
   /** Domain(s) for Traefik routing */
@@ -202,7 +209,7 @@ function computeDiff(oldSpec: AppSpec, newSpec: AppSpec): AppSpecDiff {
 
   // Fields to compare (skip timestamps)
   const fields: (keyof AppSpec)[] = [
-    'name', 'repo', 'image', 'port', 'desiredState',
+    'name', 'repo', 'image', 'port', 'hostPort', 'exposePortPublicly', 'desiredState',
     'domains', 'env', 'resources', 'health', 'postgres', 'metadata',
   ];
 
