@@ -452,7 +452,8 @@ export class StateManager {
 
     // If app doesn't have a runtime state yet, allow initial states
     if (!currentState) {
-      if (newState !== 'creating' && newState !== 'stopped') {
+      const allowedInitial: AppActualState[] = ['creating', 'stopped', 'deploying'];
+      if (!allowedInitial.includes(newState)) {
         return undefined;
       }
     } else {
