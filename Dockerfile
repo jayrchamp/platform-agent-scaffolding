@@ -25,10 +25,13 @@ RUN npm run build
 
 FROM node:22-alpine
 
-WORKDIR /app
+# Non-root runtime user (UID 10001 to avoid host UID conflicts)
+RUN addgroup -g 10001 agent && adduser -u 10001 -G agent -s /bin/sh -D agent
 
-# su-exec for dropping privileges in entrypoint
+# su-exec for privilege drop in entrypoint (Alpine equivalent of gosu)
 RUN apk add --no-cache su-exec
+
+WORKDIR /app
 
 # Install production deps only
 COPY package.json package-lock.json ./
@@ -38,10 +41,7 @@ RUN npm ci --omit=dev
 COPY --from=builder /build/dist/ dist/
 COPY package.json ./
 
-# Non-root user for security (fixed UID/GID for predictable volume permissions)
-RUN addgroup -g 1001 -S agent && adduser -u 1001 -S agent -G agent
-
-# Entrypoint: prepares data dirs as root, then drops to agent user
+# Entrypoint: fixes volume permissions, then drops to 'agent' user
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
@@ -51,5 +51,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 EXPOSE 3100
 
-# Run as root — entrypoint fixes volume permissions then drops to agent via su-exec
+# Starts as root to fix volume ownership, then entrypoint drops to 'agent' via su-exec.
+# Do NOT add USER here — the entrypoint needs root briefly for chown + docker.sock group.
 ENTRYPOINT ["/entrypoint.sh"]
