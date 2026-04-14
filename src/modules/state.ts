@@ -211,6 +211,55 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     return { spec: version.spec, version: version.version };
   });
 
+  // ── App Runtime State ────────────────────────────────────────────────────
+
+  // GET /api/state/apps/states
+  app.get('/apps/states', async () => {
+    return { states: state.listAppStates() };
+  });
+
+  // GET /api/state/apps/:name/state
+  app.get<{ Params: { name: string } }>('/apps/:name/state', async (request, reply) => {
+    const appState = state.getAppState(request.params.name);
+    if (!appState) {
+      reply.code(404).send({ error: `No runtime state for '${request.params.name}'` });
+      return;
+    }
+    return appState;
+  });
+
+  // POST /api/state/apps/:name/transition
+  app.post<{
+    Params: { name: string };
+    Body: { state: string; error?: string };
+  }>('/apps/:name/transition', async (request, reply) => {
+    const { name } = request.params;
+    const { state: newState, error: errorMsg } = request.body ?? {};
+
+    if (!newState) {
+      reply.code(400).send({ error: 'state is required' });
+      return;
+    }
+
+    const result = state.transitionAppState(
+      name,
+      newState as import('../services/state.js').AppActualState,
+      errorMsg,
+    );
+
+    if (!result) {
+      const current = state.getAppState(name);
+      reply.code(422).send({
+        error: `Invalid transition: ${current?.state ?? 'none'} → ${newState}`,
+        currentState: current?.state ?? null,
+        requestedState: newState,
+      });
+      return;
+    }
+
+    return result;
+  });
+
   // ── Operations & Version ────────────────────────────────────────────────
 
   // GET /api/state/operations

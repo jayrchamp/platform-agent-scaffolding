@@ -117,6 +117,38 @@ export interface AppSpecMeta {
   updatedAt: string;
 }
 
+// ── App runtime state (actual state, separate from desired state) ──────────
+
+export type AppActualState =
+  | 'creating'
+  | 'deploying'
+  | 'running'
+  | 'updating'
+  | 'degraded'
+  | 'stopped'
+  | 'error';
+
+export const VALID_STATE_TRANSITIONS: Record<AppActualState, AppActualState[]> = {
+  creating: ['deploying', 'error'],
+  deploying: ['running', 'error'],
+  running: ['updating', 'degraded', 'stopped'],
+  updating: ['running', 'error'],
+  degraded: ['running', 'stopped', 'error'],
+  stopped: ['deploying', 'creating'],
+  error: ['deploying', 'stopped'],
+};
+
+export interface AppRuntimeState {
+  /** App name (matches AppSpec name) */
+  name: string;
+  /** Current actual state */
+  state: AppActualState;
+  /** Last state change timestamp */
+  updatedAt: string;
+  /** Error message if in error state */
+  error?: string;
+}
+
 export interface OperationLogEntry {
   id: string;
   type: string;
@@ -185,6 +217,9 @@ export class StateManager {
   /** In-memory cache: name → { meta, current spec, versions loaded on-demand } */
   private appspecs: Map<string, { meta: AppSpecMeta; current: AppSpec }> = new Map();
 
+  /** In-memory runtime states (loaded from disk at boot) */
+  private runtimeStates: Map<string, AppRuntimeState> = new Map();
+
   constructor(basePath: string) {
     this.basePath = basePath;
     this.appspecsDir = join(basePath, 'appspecs');
@@ -203,6 +238,9 @@ export class StateManager {
 
     // Load versioned AppSpecs from disk
     this.loadAppSpecs();
+
+    // Load runtime states from disk
+    this.loadRuntimeStates();
 
     // Update agent meta
     this.updateAgentMeta();
@@ -284,6 +322,7 @@ export class StateManager {
     if (!this.appspecs.has(name)) return false;
 
     this.appspecs.delete(name);
+    this.runtimeStates.delete(name);
 
     const appDir = join(this.appspecsDir, name);
     if (existsSync(appDir)) {
@@ -379,6 +418,102 @@ export class StateManager {
       changedBy: 'system',
       changeDescription: 'Imported from another VPS',
     });
+  }
+
+  // ── App runtime state ──────────────────────────────────────────────────
+
+  /** Get the runtime state for an app */
+  getAppState(name: string): AppRuntimeState | undefined {
+    return this.runtimeStates.get(name);
+  }
+
+  /** Get all runtime states */
+  listAppStates(): AppRuntimeState[] {
+    return Array.from(this.runtimeStates.values());
+  }
+
+  /**
+   * Transition an app to a new state.
+   * Validates the transition against the state machine.
+   * Returns the new state, or undefined if the transition is invalid.
+   */
+  transitionAppState(
+    name: string,
+    newState: AppActualState,
+    error?: string,
+  ): AppRuntimeState | undefined {
+    const current = this.runtimeStates.get(name);
+    const currentState = current?.state;
+
+    // If app doesn't have a runtime state yet, allow initial states
+    if (!currentState) {
+      if (newState !== 'creating' && newState !== 'stopped') {
+        return undefined;
+      }
+    } else {
+      // Validate transition
+      const allowed = VALID_STATE_TRANSITIONS[currentState];
+      if (!allowed.includes(newState)) {
+        return undefined;
+      }
+    }
+
+    const state: AppRuntimeState = {
+      name,
+      state: newState,
+      updatedAt: new Date().toISOString(),
+      error: newState === 'error' ? error : undefined,
+    };
+
+    this.runtimeStates.set(name, state);
+    this.persistRuntimeState(name, state);
+
+    return state;
+  }
+
+  /** Remove runtime state (e.g., on app deletion) */
+  removeAppState(name: string): void {
+    this.runtimeStates.delete(name);
+    const statePath = join(this.appspecsDir, name, 'runtime.json');
+    if (existsSync(statePath)) {
+      unlinkSync(statePath);
+    }
+  }
+
+  private persistRuntimeState(name: string, state: AppRuntimeState): void {
+    const appDir = join(this.appspecsDir, name);
+    if (!existsSync(appDir)) return;
+
+    writeFileSync(
+      join(appDir, 'runtime.json'),
+      JSON.stringify(state, null, 2),
+      'utf-8',
+    );
+  }
+
+  private loadRuntimeStates(): void {
+    this.runtimeStates.clear();
+
+    if (!existsSync(this.appspecsDir)) return;
+
+    const entries = readdirSync(this.appspecsDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const runtimePath = join(this.appspecsDir, entry.name, 'runtime.json');
+      if (!existsSync(runtimePath)) continue;
+
+      try {
+        const raw = readFileSync(runtimePath, 'utf-8');
+        const state = JSON.parse(raw) as AppRuntimeState;
+        if (state?.name) {
+          this.runtimeStates.set(state.name, state);
+        }
+      } catch {
+        // Skip corrupted state files
+      }
+    }
   }
 
   // ── Operations log ─────────────────────────────────────────────────────
