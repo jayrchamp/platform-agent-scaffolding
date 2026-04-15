@@ -17,6 +17,7 @@ import {
   getCertificates,
   getCertificateForDomain,
 } from '../services/traefik.js';
+import { findAppContainer } from '../services/apps.js';
 
 export const traefikModule: FastifyPluginAsync = async (app) => {
   // GET /api/traefik/routes — list all dynamic routes
@@ -28,22 +29,38 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
   // PUT /api/traefik/routes/:appName — create/update a route
   app.put<{
     Params: { appName: string };
-    Body: { domain: string; containerName: string; port: number };
+    Body: { domain: string; containerName?: string; port: number };
   }>('/routes/:appName', async (request, reply) => {
     const { appName } = request.params;
-    const { domain, containerName, port } = request.body ?? {};
+    const { domain, port } = request.body ?? {};
+    let { containerName } = request.body ?? {};
 
     if (!domain || typeof domain !== 'string') {
       reply.code(400).send({ error: 'domain is required' });
       return;
     }
-    if (!containerName || typeof containerName !== 'string') {
-      reply.code(400).send({ error: 'containerName is required' });
-      return;
-    }
     if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
       reply.code(400).send({ error: 'port must be a valid number (1-65535)' });
       return;
+    }
+
+    // Auto-resolve container name if not provided
+    if (!containerName) {
+      try {
+        const container = await findAppContainer(appName);
+        if (!container) {
+          reply
+            .code(404)
+            .send({ error: `No container found for app '${appName}'` });
+          return;
+        }
+        containerName = container.name.replace(/^\//, '');
+      } catch (err) {
+        reply.code(500).send({
+          error: `Failed to resolve container: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        return;
+      }
     }
 
     try {

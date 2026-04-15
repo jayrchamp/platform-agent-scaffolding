@@ -27,12 +27,14 @@ const {
   mockListRouteConfigs,
   mockGetCertificates,
   mockGetCertificateForDomain,
+  mockFindAppContainer,
 } = vi.hoisted(() => ({
   mockWriteRouteConfig: vi.fn(),
   mockRemoveRouteConfig: vi.fn(),
   mockListRouteConfigs: vi.fn(),
   mockGetCertificates: vi.fn(),
   mockGetCertificateForDomain: vi.fn(),
+  mockFindAppContainer: vi.fn(),
 }));
 
 vi.mock('../src/services/traefik.js', () => ({
@@ -43,6 +45,15 @@ vi.mock('../src/services/traefik.js', () => ({
   getCertificateForDomain: mockGetCertificateForDomain,
   setTraefikPaths: vi.fn(),
   resetTraefikPaths: vi.fn(),
+}));
+
+vi.mock('../src/services/apps.js', () => ({
+  findAppContainer: mockFindAppContainer,
+  deployApp: vi.fn(),
+  startApp: vi.fn(),
+  stopApp: vi.fn(),
+  restartApp: vi.fn(),
+  getAppLogs: vi.fn(),
 }));
 
 // Also mock heavy deps so buildApp doesn't fail
@@ -105,6 +116,12 @@ beforeEach(() => {
   mockListRouteConfigs.mockReset();
   mockGetCertificates.mockReset();
   mockGetCertificateForDomain.mockReset();
+  mockFindAppContainer.mockReset();
+  // Default: auto-resolve returns a container
+  mockFindAppContainer.mockResolvedValue({
+    name: 'my-app-web-abc123',
+    id: 'abc123',
+  });
 });
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -213,7 +230,9 @@ describe('PUT /api/traefik/routes/:appName', () => {
     expect(JSON.parse(res.payload).error).toContain('domain');
   });
 
-  it('returns 400 when containerName is missing', async () => {
+  it('returns 400 when containerName is missing and container not found', async () => {
+    mockFindAppContainer.mockResolvedValue(undefined);
+
     const res = await app.inject({
       method: 'PUT',
       url: '/api/traefik/routes/my-app',
@@ -221,8 +240,31 @@ describe('PUT /api/traefik/routes/:appName', () => {
       payload: { domain: 'app.example.com', port: 3000 },
     });
 
-    expect(res.statusCode).toBe(400);
-    expect(JSON.parse(res.payload).error).toContain('containerName');
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.payload).error).toContain('No container');
+  });
+
+  it('auto-resolves container name when not provided', async () => {
+    mockWriteRouteConfig.mockResolvedValue(undefined);
+    mockFindAppContainer.mockResolvedValue({
+      name: 'my-app-web-def456',
+      id: 'def456',
+    });
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/api/traefik/routes/my-app',
+      headers: { ...HEADERS, 'content-type': 'application/json' },
+      payload: { domain: 'app.example.com', port: 3000 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockWriteRouteConfig).toHaveBeenCalledWith(
+      'my-app',
+      'app.example.com',
+      'my-app-web-def456',
+      3000
+    );
   });
 
   it('returns 400 when port is missing', async () => {
