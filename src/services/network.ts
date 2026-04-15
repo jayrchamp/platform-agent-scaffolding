@@ -21,6 +21,28 @@ const execFile = promisify(execFileCb);
 const RULE_COMMENT = 'platform-manager-block';
 const SSH_PORT = 22;
 
+/**
+ * Reject private, loopback, and link-local IPs — blocking them via iptables
+ * makes no sense and could cause unexpected behaviour.
+ */
+function assertPublicIp(ip: string): void {
+  if (
+    ip.startsWith('10.') ||
+    ip.startsWith('192.168.') ||
+    ip.startsWith('127.') ||
+    ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') ||
+    ip.startsWith('172.19.') || ip.startsWith('172.20.') || ip.startsWith('172.21.') ||
+    ip.startsWith('172.22.') || ip.startsWith('172.23.') || ip.startsWith('172.24.') ||
+    ip.startsWith('172.25.') || ip.startsWith('172.26.') || ip.startsWith('172.27.') ||
+    ip.startsWith('172.28.') || ip.startsWith('172.29.') || ip.startsWith('172.30.') ||
+    ip.startsWith('172.31.') ||
+    ip.startsWith('169.254.') ||
+    ip === '0.0.0.0'
+  ) {
+    throw new Error(`Refusing to block private/loopback IP: ${ip}`);
+  }
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export interface NetworkOpResult {
@@ -37,6 +59,8 @@ export async function blockIp(
   ip: string,
   agentPort?: number,
 ): Promise<NetworkOpResult> {
+  assertPublicIp(ip);
+
   try {
     // 1. ACCEPT SSH first (safety: can never lock ourselves out)
     await iptablesRun([

@@ -198,8 +198,8 @@ describe('Apps Service', () => {
 
     it('should return undefined when container not found', async () => {
       (listContainers as any).mockResolvedValue([
-        createMockContainer('app-other-app'),
-        createMockContainer('app-different-app'),
+        createMockContainer('app-other-app', { labels: { 'platform.app': 'other-app' } }),
+        createMockContainer('app-different-app', { labels: { 'platform.app': 'different-app' } }),
       ]);
 
       const result = await findAppContainer('test-app');
@@ -217,9 +217,9 @@ describe('Apps Service', () => {
 
     it('should match exact container name among multiple', async () => {
       const containers = [
-        createMockContainer('app-test-app-v1'),
+        createMockContainer('app-test-app-v1', { labels: { 'platform.app': 'test-app-v1' } }),
         createMockContainer('app-test-app'),
-        createMockContainer('app-test-app-v2'),
+        createMockContainer('app-test-app-v2', { labels: { 'platform.app': 'test-app-v2' } }),
       ];
       (listContainers as any).mockResolvedValue(containers);
 

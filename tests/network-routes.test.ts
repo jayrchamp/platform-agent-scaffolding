@@ -95,14 +95,14 @@ describe('network routes — auth', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('returns 401 with wrong token', async () => {
+  it('returns 403 with wrong token', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/network/block-original-ip',
       headers: { Authorization: 'Bearer wrong-token' },
       payload: { originalIp: '142.93.25.10' },
     });
-    expect(res.statusCode).toBe(401);
+    expect(res.statusCode).toBe(403);
   });
 });
 

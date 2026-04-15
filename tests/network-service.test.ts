@@ -52,6 +52,10 @@ function makeEmptyIptablesList(): string {
 // ── Tests: isValidPublicIp (indirectly via blockIp rejection) ─────────────────
 
 describe('blockIp — input validation', () => {
+  beforeEach(() => {
+    mockExecFile.mockReset();
+  });
+
   it('rejects private 10.x.x.x addresses', async () => {
     await expect(blockIp('10.0.0.1')).rejects.toThrow();
   });
@@ -103,9 +107,13 @@ describe('blockIp', () => {
     await blockIp('142.93.25.10', 3000);
 
     // Should have been called with -I INPUT 2 for the agent port
-    const calls = mockExecFile.mock.calls as string[][];
+    // mockExecFile receives ('iptables', [...args]) — check nested array
+    const calls = mockExecFile.mock.calls as [string, string[]][];
     const agentPortCall = calls.find(
-      (args) => args.includes('3000') && args.includes('ACCEPT'),
+      ([_cmd, iptablesArgs]) =>
+        Array.isArray(iptablesArgs) &&
+        iptablesArgs.includes('3000') &&
+        iptablesArgs.includes('ACCEPT'),
     );
     expect(agentPortCall).toBeDefined();
   });

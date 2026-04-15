@@ -19,6 +19,12 @@ vi.mock('node:http', () => ({
   get: vi.fn(),
 }));
 
+// Mock findAppContainer — returns a running container with the native name pattern
+const mockFindAppContainer = vi.fn();
+vi.mock('../src/services/apps.js', () => ({
+  findAppContainer: (...args: unknown[]) => mockFindAppContainer(...args),
+}));
+
 /**
  * Create a mock StateManager with optional app states and specs.
  */
@@ -113,6 +119,12 @@ let clearIntervalSpy: any;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+
+  // Default: findAppContainer returns a running container with the native naming convention.
+  // Individual tests can override this when they need different behaviour.
+  mockFindAppContainer.mockImplementation((appName: string) =>
+    Promise.resolve({ name: `app-${appName}`, state: 'running' }),
+  );
 
   // Create spies on global setInterval/clearInterval
   setIntervalSpy = vi.spyOn(global, 'setInterval');
