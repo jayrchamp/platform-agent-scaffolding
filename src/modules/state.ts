@@ -23,6 +23,7 @@ import { findAppContainer } from '../services/apps.js';
 
 export const stateModule: FastifyPluginAsync = async (app) => {
   const state = app.stateManager;
+  const healthMonitor = app.healthMonitor;
 
   // ── CRUD ────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,13 @@ export const stateModule: FastifyPluginAsync = async (app) => {
       newState as import('../services/state.js').AppActualState,
       errorMsg,
     );
+
+    // Restart health monitoring on transition to 'running' so the monitor
+    // picks up the new container (e.g. after a Kamal redeploy with a new SHA).
+    if (result && newState === 'running') {
+      healthMonitor?.stopMonitoring(name);
+      healthMonitor?.startMonitoring(name);
+    }
 
     if (!result) {
       const current = state.getAppState(name);
