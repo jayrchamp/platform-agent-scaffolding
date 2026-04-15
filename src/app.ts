@@ -19,6 +19,7 @@ import { agentModule } from './modules/agent.js';
 import { postgresModule } from './modules/postgres.js';
 import { appsModule } from './modules/apps.js';
 import { networkModule } from './modules/network.js';
+import { traefikModule } from './modules/traefik.js';
 import { setBuildsBase } from './services/build.js';
 
 // ── Build app ──────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     await authedScope.register(postgresModule, { prefix: '/postgres' });
     await authedScope.register(appsModule, { prefix: '/apps' });
     await authedScope.register(networkModule, { prefix: '/network' });
+    await authedScope.register(traefikModule, { prefix: '/traefik' });
   }, { prefix: '/api' });
 
   return app;
