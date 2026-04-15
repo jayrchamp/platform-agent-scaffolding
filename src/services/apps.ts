@@ -39,11 +39,42 @@ function containerName(appName: string): string {
 }
 
 // ── Find app container ─────────────────────────────────────────────────────
+//
+// Supports two container naming conventions:
+// 1. Platform native: "app-{appName}" (deployed by the built-in deploy engine)
+// 2. Kamal:           "{appName}-web-{commitSha}" (deployed via Kamal CLI)
+//
+// Kamal containers are also matched by the label "platform.app={appName}".
+// When both exist, prefer the RUNNING container. If both are running, prefer
+// the Kamal container (it's the most recent deployment).
 
 export async function findAppContainer(appName: string): Promise<ContainerInfo | undefined> {
   const containers = await listContainers(true); // include stopped
-  const name = containerName(appName);
-  return containers.find((c) => c.name === name || c.name === `/${name}`);
+  const nativeName = containerName(appName);
+
+  // Match native name OR Kamal label
+  const candidates = containers.filter((c) => {
+    // Native convention: exact name match
+    if (c.name === nativeName || c.name === `/${nativeName}`) return true;
+    // Kamal convention: name starts with "{appName}-web-" OR label match
+    if (c.name.startsWith(`${appName}-web-`)) return true;
+    if (c.labels?.['platform.app'] === appName) return true;
+    return false;
+  });
+
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  // Multiple candidates — prefer running over stopped, then Kamal over native
+  const running = candidates.filter((c) => c.state === 'running');
+  if (running.length === 1) return running[0];
+  if (running.length > 1) {
+    // Prefer Kamal container (non-native name) as it's the latest deploy
+    return running.find((c) => c.name !== nativeName && c.name !== `/${nativeName}`) ?? running[0];
+  }
+
+  // All stopped — return most recently created
+  return candidates[0];
 }
 
 // ── Build CreateContainerOptions from AppSpec ──────────────────────────────

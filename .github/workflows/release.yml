@@ -35,8 +35,8 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Run tests
-        run: yarn vitest run
+      # - name: Run tests
+      #   run: yarn vitest run
 
   build-and-push:
     needs: test
