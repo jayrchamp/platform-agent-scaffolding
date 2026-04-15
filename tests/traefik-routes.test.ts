@@ -214,7 +214,8 @@ describe('PUT /api/traefik/routes/:appName', () => {
       'my-app',
       'app.example.com',
       'my-app-web-abc123',
-      3000
+      3000,
+      undefined
     );
   });
 
@@ -263,7 +264,8 @@ describe('PUT /api/traefik/routes/:appName', () => {
       'my-app',
       'app.example.com',
       'my-app-web-def456',
-      3000
+      3000,
+      undefined
     );
   });
 

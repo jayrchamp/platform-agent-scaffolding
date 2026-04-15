@@ -6,7 +6,15 @@
 //
 // Also reads certificate information from the ACME storage file.
 
-import { readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import {
+  readdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+  mkdir,
+  chmod,
+} from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import yaml from 'js-yaml';
@@ -15,6 +23,7 @@ import yaml from 'js-yaml';
 
 const DYNAMIC_DIR = '/opt/platform/traefik/dynamic';
 const ACME_FILE = '/opt/platform/traefik/certs/acme.json';
+const ORIGIN_CERTS_DIR = '/opt/platform/traefik/certs/origin';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +54,7 @@ interface TraefikDynamicConfig {
         rule?: string;
         service?: string;
         entryPoints?: string[];
-        tls?: { certResolver?: string };
+        tls?: { certResolver?: string } | Record<string, never>;
         middlewares?: string[];
       }
     >;
@@ -72,18 +81,22 @@ interface AcmeStorage {
 
 let dynamicDir = DYNAMIC_DIR;
 let acmeFile = ACME_FILE;
+let originCertsDir = ORIGIN_CERTS_DIR;
 
 export function setTraefikPaths(paths: {
   dynamicDir?: string;
   acmeFile?: string;
+  originCertsDir?: string;
 }): void {
   if (paths.dynamicDir) dynamicDir = paths.dynamicDir;
   if (paths.acmeFile) acmeFile = paths.acmeFile;
+  if (paths.originCertsDir) originCertsDir = paths.originCertsDir;
 }
 
 export function resetTraefikPaths(): void {
   dynamicDir = DYNAMIC_DIR;
   acmeFile = ACME_FILE;
+  originCertsDir = ORIGIN_CERTS_DIR;
 }
 
 // ── Route management ───────────────────────────────────────────────────────
@@ -96,7 +109,8 @@ export async function writeRouteConfig(
   appName: string,
   domain: string,
   containerName: string,
-  port: number
+  port: number,
+  sslMode: 'letsencrypt' | 'origin' = 'letsencrypt'
 ): Promise<void> {
   const config: TraefikDynamicConfig = {
     http: {
@@ -105,7 +119,7 @@ export async function writeRouteConfig(
           rule: `Host(\`${domain}\`)`,
           service: appName,
           entryPoints: ['websecure'],
-          tls: { certResolver: 'letsencrypt' },
+          tls: sslMode === 'origin' ? {} : { certResolver: 'letsencrypt' },
         },
         [`${appName}-http`]: {
           rule: `Host(\`${domain}\`)`,
@@ -131,6 +145,18 @@ export async function writeRouteConfig(
       },
     },
   };
+
+  // For origin mode, add tls.certificates section referencing the cert files
+  if (sslMode === 'origin') {
+    (config as Record<string, unknown>).tls = {
+      certificates: [
+        {
+          certFile: `/certs/origin/${domain}.crt`,
+          keyFile: `/certs/origin/${domain}.key`,
+        },
+      ],
+    };
+  }
 
   const yamlContent = yaml.dump(config, { lineWidth: -1, noRefs: true });
   const filePath = join(dynamicDir, `${appName}.yml`);
@@ -213,6 +239,89 @@ export async function listRouteConfigs(): Promise<TraefikRouteInfo[]> {
 }
 
 // ── Certificate monitoring ─────────────────────────────────────────────────
+
+// ── Origin Certificate management ──────────────────────────────────────────
+
+/**
+ * Write an Origin Certificate + private key to disk.
+ * Files: /opt/platform/traefik/certs/origin/{domain}.crt
+ *        /opt/platform/traefik/certs/origin/{domain}.key
+ * Uses atomic write and sets 600 permissions on the key file.
+ */
+export async function writeOriginCert(
+  domain: string,
+  certPem: string,
+  keyPem: string
+): Promise<void> {
+  await mkdir(originCertsDir, { recursive: true });
+
+  const certFile = join(originCertsDir, `${domain}.crt`);
+  const keyFile = join(originCertsDir, `${domain}.key`);
+  const certTmp = `${certFile}.tmp`;
+  const keyTmp = `${keyFile}.tmp`;
+
+  await writeFile(certTmp, certPem, 'utf-8');
+  await rename(certTmp, certFile);
+
+  await writeFile(keyTmp, keyPem, { encoding: 'utf-8', mode: 0o600 });
+  await rename(keyTmp, keyFile);
+  await chmod(keyFile, 0o600);
+}
+
+/**
+ * Remove Origin Certificate files for a domain.
+ */
+export async function removeOriginCert(domain: string): Promise<void> {
+  const certFile = join(originCertsDir, `${domain}.crt`);
+  const keyFile = join(originCertsDir, `${domain}.key`);
+
+  for (const file of [certFile, keyFile]) {
+    try {
+      await unlink(file);
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        'code' in err &&
+        (err as NodeJS.ErrnoException).code === 'ENOENT'
+      ) {
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * List all Origin Certificate files (paired .crt/.key).
+ */
+export async function listOriginCerts(): Promise<
+  Array<{ domain: string; certFile: string; keyFile: string }>
+> {
+  let files: string[];
+  try {
+    files = await readdir(originCertsDir);
+  } catch {
+    return [];
+  }
+
+  const crtFiles = files.filter((f) => f.endsWith('.crt'));
+  const results: Array<{ domain: string; certFile: string; keyFile: string }> =
+    [];
+
+  for (const crt of crtFiles) {
+    const domain = crt.replace(/\.crt$/, '');
+    const keyName = `${domain}.key`;
+    if (files.includes(keyName)) {
+      results.push({
+        domain,
+        certFile: join(originCertsDir, crt),
+        keyFile: join(originCertsDir, keyName),
+      });
+    }
+  }
+
+  return results;
+}
 
 /**
  * Parse acme.json and return all certificates with domain, dates, and issuer info.

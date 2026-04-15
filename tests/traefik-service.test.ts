@@ -23,6 +23,9 @@ import {
   listRouteConfigs,
   getCertificates,
   getCertificateForDomain,
+  writeOriginCert,
+  removeOriginCert,
+  listOriginCerts,
   setTraefikPaths,
   resetTraefikPaths,
 } from '../src/services/traefik.js';
@@ -32,13 +35,15 @@ import {
 let tmpDir: string;
 let dynamicDir: string;
 let acmeFile: string;
+let originCertsDir: string;
 
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'platform-traefik-'));
   dynamicDir = join(tmpDir, 'dynamic');
   acmeFile = join(tmpDir, 'acme.json');
+  originCertsDir = join(tmpDir, 'origin');
   mkdirSync(dynamicDir, { recursive: true });
-  setTraefikPaths({ dynamicDir, acmeFile });
+  setTraefikPaths({ dynamicDir, acmeFile, originCertsDir });
 });
 
 afterAll(() => {
@@ -308,6 +313,170 @@ describe('getCertificateForDomain', () => {
     const cert = await getCertificateForDomain('found.example.com');
     expect(cert).not.toBeNull();
     expect(cert!.domain).toBe('found.example.com');
+  });
+});
+
+// ── writeRouteConfig with sslMode ─────────────────────────────────────────────
+
+describe('writeRouteConfig sslMode', () => {
+  it('generates letsencrypt certResolver by default', async () => {
+    await writeRouteConfig('my-app', 'app.example.com', 'container', 3000);
+
+    const content = readFileSync(join(dynamicDir, 'my-app.yml'), 'utf-8');
+    const parsed = yaml.load(content) as any;
+
+    expect(parsed.http.routers['my-app'].tls.certResolver).toBe('letsencrypt');
+    expect(parsed.tls).toBeUndefined();
+  });
+
+  it('generates origin mode with tls.certificates section', async () => {
+    await writeRouteConfig(
+      'my-app',
+      'app.example.com',
+      'container',
+      3000,
+      'origin'
+    );
+
+    const content = readFileSync(join(dynamicDir, 'my-app.yml'), 'utf-8');
+    const parsed = yaml.load(content) as any;
+
+    // Router should have empty tls (no certResolver)
+    expect(parsed.http.routers['my-app'].tls).toEqual({});
+    expect(parsed.http.routers['my-app'].tls.certResolver).toBeUndefined();
+
+    // Root tls.certificates should reference origin cert files
+    expect(parsed.tls).toBeDefined();
+    expect(parsed.tls.certificates).toHaveLength(1);
+    expect(parsed.tls.certificates[0].certFile).toBe(
+      '/certs/origin/app.example.com.crt'
+    );
+    expect(parsed.tls.certificates[0].keyFile).toBe(
+      '/certs/origin/app.example.com.key'
+    );
+  });
+
+  it('still includes HTTP redirect middleware in origin mode', async () => {
+    await writeRouteConfig(
+      'my-app',
+      'app.example.com',
+      'container',
+      3000,
+      'origin'
+    );
+
+    const parsed = yaml.load(
+      readFileSync(join(dynamicDir, 'my-app.yml'), 'utf-8')
+    ) as any;
+
+    expect(parsed.http.routers['my-app-http']).toBeDefined();
+    expect(parsed.http.routers['my-app-http'].middlewares).toEqual([
+      'my-app-redirect-https',
+    ]);
+    expect(parsed.http.middlewares['my-app-redirect-https']).toBeDefined();
+  });
+});
+
+// ── writeOriginCert ───────────────────────────────────────────────────────────
+
+describe('writeOriginCert', () => {
+  const CERT_PEM =
+    '-----BEGIN CERTIFICATE-----\nTEST_CERT\n-----END CERTIFICATE-----';
+  const KEY_PEM =
+    '-----BEGIN RSA PRIVATE KEY-----\nTEST_KEY\n-----END RSA PRIVATE KEY-----';
+
+  it('creates cert and key files', async () => {
+    await writeOriginCert('app.example.com', CERT_PEM, KEY_PEM);
+
+    const certFile = join(originCertsDir, 'app.example.com.crt');
+    const keyFile = join(originCertsDir, 'app.example.com.key');
+
+    expect(existsSync(certFile)).toBe(true);
+    expect(existsSync(keyFile)).toBe(true);
+    expect(readFileSync(certFile, 'utf-8')).toBe(CERT_PEM);
+    expect(readFileSync(keyFile, 'utf-8')).toBe(KEY_PEM);
+  });
+
+  it('creates the origin certs directory if missing', async () => {
+    const newDir = join(tmpDir, 'new-origin');
+    setTraefikPaths({ originCertsDir: newDir });
+
+    await writeOriginCert('test.com', CERT_PEM, KEY_PEM);
+    expect(existsSync(join(newDir, 'test.com.crt'))).toBe(true);
+  });
+
+  it('overwrites existing cert files', async () => {
+    await writeOriginCert('app.example.com', 'OLD_CERT', 'OLD_KEY');
+    await writeOriginCert('app.example.com', CERT_PEM, KEY_PEM);
+
+    expect(
+      readFileSync(join(originCertsDir, 'app.example.com.crt'), 'utf-8')
+    ).toBe(CERT_PEM);
+    expect(
+      readFileSync(join(originCertsDir, 'app.example.com.key'), 'utf-8')
+    ).toBe(KEY_PEM);
+  });
+});
+
+// ── removeOriginCert ──────────────────────────────────────────────────────────
+
+describe('removeOriginCert', () => {
+  const CERT_PEM =
+    '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----';
+  const KEY_PEM =
+    '-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----';
+
+  it('removes cert and key files', async () => {
+    await writeOriginCert('app.example.com', CERT_PEM, KEY_PEM);
+    await removeOriginCert('app.example.com');
+
+    expect(existsSync(join(originCertsDir, 'app.example.com.crt'))).toBe(false);
+    expect(existsSync(join(originCertsDir, 'app.example.com.key'))).toBe(false);
+  });
+
+  it('does not throw when files do not exist', async () => {
+    await expect(removeOriginCert('nonexistent.com')).resolves.toBeUndefined();
+  });
+});
+
+// ── listOriginCerts ───────────────────────────────────────────────────────────
+
+describe('listOriginCerts', () => {
+  const CERT_PEM =
+    '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----';
+  const KEY_PEM =
+    '-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----';
+
+  it('returns empty array when no certs exist', async () => {
+    const result = await listOriginCerts();
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty array when directory does not exist', async () => {
+    setTraefikPaths({ originCertsDir: join(tmpDir, 'nonexistent') });
+    const result = await listOriginCerts();
+    expect(result).toEqual([]);
+  });
+
+  it('lists paired cert/key files', async () => {
+    await writeOriginCert('a.example.com', CERT_PEM, KEY_PEM);
+    await writeOriginCert('b.example.com', CERT_PEM, KEY_PEM);
+
+    const result = await listOriginCerts();
+    expect(result).toHaveLength(2);
+
+    const domains = result.map((r) => r.domain).sort();
+    expect(domains).toEqual(['a.example.com', 'b.example.com']);
+  });
+
+  it('skips unpaired files', async () => {
+    await writeOriginCert('paired.com', CERT_PEM, KEY_PEM);
+    // Write only a .crt with no matching .key
+    writeFileSync(join(originCertsDir, 'orphan.com.crt'), CERT_PEM);
+
+    const result = await listOriginCerts();
+    expect(result).toHaveLength(1);
+    expect(result[0].domain).toBe('paired.com');
   });
 });
 

@@ -8,6 +8,9 @@
 //   DELETE /routes/:appName       — remove a route for an app
 //   GET    /certificates          — list all ACME certificates
 //   GET    /certificates/:domain  — get certificate info for a specific domain
+//   PUT    /origin-cert/:domain   — write Origin Certificate files
+//   DELETE /origin-cert/:domain   — remove Origin Certificate files
+//   GET    /origin-certs          — list all installed Origin Certificates
 
 import type { FastifyPluginAsync } from 'fastify';
 import {
@@ -16,6 +19,9 @@ import {
   listRouteConfigs,
   getCertificates,
   getCertificateForDomain,
+  writeOriginCert,
+  removeOriginCert,
+  listOriginCerts,
 } from '../services/traefik.js';
 import { findAppContainer } from '../services/apps.js';
 
@@ -29,10 +35,15 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
   // PUT /api/traefik/routes/:appName — create/update a route
   app.put<{
     Params: { appName: string };
-    Body: { domain: string; containerName?: string; port: number };
+    Body: {
+      domain: string;
+      containerName?: string;
+      port: number;
+      sslMode?: 'letsencrypt' | 'origin';
+    };
   }>('/routes/:appName', async (request, reply) => {
     const { appName } = request.params;
-    const { domain, port } = request.body ?? {};
+    const { domain, port, sslMode } = request.body ?? {};
     let { containerName } = request.body ?? {};
 
     if (!domain || typeof domain !== 'string') {
@@ -64,9 +75,15 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      await writeRouteConfig(appName, domain, containerName, port);
+      await writeRouteConfig(appName, domain, containerName, port, sslMode);
       app.log.info(
-        { appName, domain, containerName, port },
+        {
+          appName,
+          domain,
+          containerName,
+          port,
+          sslMode: sslMode ?? 'letsencrypt',
+        },
         'Traefik route created/updated'
       );
       return { success: true, appName, domain };
@@ -123,4 +140,66 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
       return cert;
     }
   );
+
+  // ── Origin Certificate management ──────────────────────────────────────
+
+  // PUT /api/traefik/origin-cert/:domain — write origin cert + key files
+  app.put<{
+    Params: { domain: string };
+    Body: { certPem: string; keyPem: string };
+  }>('/origin-cert/:domain', async (request, reply) => {
+    const { domain } = request.params;
+    const { certPem, keyPem } = request.body ?? {};
+
+    if (!certPem || typeof certPem !== 'string') {
+      reply.code(400).send({ error: 'certPem is required' });
+      return;
+    }
+    if (!keyPem || typeof keyPem !== 'string') {
+      reply.code(400).send({ error: 'keyPem is required' });
+      return;
+    }
+
+    try {
+      await writeOriginCert(domain, certPem, keyPem);
+      app.log.info({ domain }, 'Origin certificate written');
+      return { success: true, domain };
+    } catch (err) {
+      app.log.error(err, `Failed to write origin cert for ${domain}`);
+      reply.code(500).send({
+        error:
+          err instanceof Error
+            ? err.message
+            : 'Failed to write origin certificate',
+      });
+    }
+  });
+
+  // DELETE /api/traefik/origin-cert/:domain — remove origin cert files
+  app.delete<{ Params: { domain: string } }>(
+    '/origin-cert/:domain',
+    async (request, reply) => {
+      const { domain } = request.params;
+
+      try {
+        await removeOriginCert(domain);
+        app.log.info({ domain }, 'Origin certificate removed');
+        return { success: true, domain };
+      } catch (err) {
+        app.log.error(err, `Failed to remove origin cert for ${domain}`);
+        reply.code(500).send({
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Failed to remove origin certificate',
+        });
+      }
+    }
+  );
+
+  // GET /api/traefik/origin-certs — list all installed origin certificates
+  app.get('/origin-certs', async () => {
+    const certificates = await listOriginCerts();
+    return { certificates };
+  });
 };
