@@ -162,6 +162,9 @@ export async function writeRouteConfig(
   const filePath = join(dynamicDir, `${appName}.yml`);
   const tmpPath = `${filePath}.tmp`;
 
+  // Ensure directory exists
+  await mkdir(dynamicDir, { recursive: true });
+
   // Atomic write: write to temp file then rename
   await writeFile(tmpPath, yamlContent, 'utf-8');
   await rename(tmpPath, filePath);
