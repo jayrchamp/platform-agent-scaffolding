@@ -33,14 +33,19 @@ export const stateModule: FastifyPluginAsync = async (app) => {
   });
 
   // GET /api/state/appspecs/:name
-  app.get<{ Params: { name: string } }>('/appspecs/:name', async (request, reply) => {
-    const spec = state.getAppSpec(request.params.name);
-    if (!spec) {
-      reply.code(404).send({ error: `AppSpec '${request.params.name}' not found` });
-      return;
+  app.get<{ Params: { name: string } }>(
+    '/appspecs/:name',
+    async (request, reply) => {
+      const spec = state.getAppSpec(request.params.name);
+      if (!spec) {
+        reply
+          .code(404)
+          .send({ error: `AppSpec '${request.params.name}' not found` });
+        return;
+      }
+      return spec;
     }
-    return spec;
-  });
+  );
 
   // PUT /api/state/appspecs/:name
   app.put<{
@@ -54,12 +59,15 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     const body = request.body ?? {};
 
     const existing = state.getAppSpec(name);
-    const buildStrategy = body.buildStrategy ?? existing?.buildStrategy ?? 'dockerfile';
+    const buildStrategy =
+      body.buildStrategy ?? existing?.buildStrategy ?? 'dockerfile';
     const image = body.image ?? existing?.image;
 
     // image is only required for 'image' strategy
     if (buildStrategy === 'image' && !image) {
-      reply.code(400).send({ error: "image is required when buildStrategy is 'image'" });
+      reply
+        .code(400)
+        .send({ error: "image is required when buildStrategy is 'image'" });
       return;
     }
 
@@ -98,38 +106,53 @@ export const stateModule: FastifyPluginAsync = async (app) => {
   });
 
   // DELETE /api/state/appspecs/:name
-  app.delete<{ Params: { name: string } }>('/appspecs/:name', async (request, reply) => {
-    const deleted = state.deleteAppSpec(request.params.name);
-    if (!deleted) {
-      reply.code(404).send({ error: `AppSpec '${request.params.name}' not found` });
-      return;
+  app.delete<{ Params: { name: string } }>(
+    '/appspecs/:name',
+    async (request, reply) => {
+      const deleted = state.deleteAppSpec(request.params.name);
+      if (!deleted) {
+        reply
+          .code(404)
+          .send({ error: `AppSpec '${request.params.name}' not found` });
+        return;
+      }
+      return { deleted: true, name: request.params.name };
     }
-    return { deleted: true, name: request.params.name };
-  });
+  );
 
   // ── Versioning ──────────────────────────────────────────────────────────
 
   // GET /api/state/appspecs/:name/meta
-  app.get<{ Params: { name: string } }>('/appspecs/:name/meta', async (request, reply) => {
-    const meta = state.getAppSpecMeta(request.params.name);
-    if (!meta) {
-      reply.code(404).send({ error: `AppSpec '${request.params.name}' not found` });
-      return;
+  app.get<{ Params: { name: string } }>(
+    '/appspecs/:name/meta',
+    async (request, reply) => {
+      const meta = state.getAppSpecMeta(request.params.name);
+      if (!meta) {
+        reply
+          .code(404)
+          .send({ error: `AppSpec '${request.params.name}' not found` });
+        return;
+      }
+      return meta;
     }
-    return meta;
-  });
+  );
 
   // GET /api/state/appspecs/:name/versions
-  app.get<{ Params: { name: string } }>('/appspecs/:name/versions', async (request, reply) => {
-    const meta = state.getAppSpecMeta(request.params.name);
-    if (!meta) {
-      reply.code(404).send({ error: `AppSpec '${request.params.name}' not found` });
-      return;
-    }
+  app.get<{ Params: { name: string } }>(
+    '/appspecs/:name/versions',
+    async (request, reply) => {
+      const meta = state.getAppSpecMeta(request.params.name);
+      if (!meta) {
+        reply
+          .code(404)
+          .send({ error: `AppSpec '${request.params.name}' not found` });
+        return;
+      }
 
-    const versions = state.getVersionHistory(request.params.name);
-    return { versions };
-  });
+      const versions = state.getVersionHistory(request.params.name);
+      return { versions };
+    }
+  );
 
   // GET /api/state/appspecs/:name/versions/:version
   app.get<{
@@ -143,7 +166,11 @@ export const stateModule: FastifyPluginAsync = async (app) => {
 
     const version = state.getVersion(request.params.name, versionNum);
     if (!version) {
-      reply.code(404).send({ error: `Version ${versionNum} not found for '${request.params.name}'` });
+      reply
+        .code(404)
+        .send({
+          error: `Version ${versionNum} not found for '${request.params.name}'`,
+        });
       return;
     }
     return version;
@@ -158,17 +185,27 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     const { toVersion } = request.body ?? {};
 
     if (!toVersion || typeof toVersion !== 'number' || toVersion < 1) {
-      reply.code(400).send({ error: 'toVersion is required and must be a positive integer' });
+      reply
+        .code(400)
+        .send({
+          error: 'toVersion is required and must be a positive integer',
+        });
       return;
     }
 
     const result = state.rollbackAppSpec(name, toVersion);
     if (!result) {
-      reply.code(404).send({ error: `Version ${toVersion} not found for '${name}'` });
+      reply
+        .code(404)
+        .send({ error: `Version ${toVersion} not found for '${name}'` });
       return;
     }
 
-    return { spec: result.spec, version: result.version, rolledBackFrom: toVersion };
+    return {
+      spec: result.spec,
+      version: result.version,
+      rolledBackFrom: toVersion,
+    };
   });
 
   // GET /api/state/appspecs/:name/diff?from=1&to=2
@@ -181,13 +218,22 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     const to = parseInt(request.query.to ?? '', 10);
 
     if (isNaN(from) || isNaN(to) || from < 1 || to < 1) {
-      reply.code(400).send({ error: 'Query params "from" and "to" are required (positive integers)' });
+      reply
+        .code(400)
+        .send({
+          error:
+            'Query params "from" and "to" are required (positive integers)',
+        });
       return;
     }
 
     const diff = state.diffVersions(name, from, to);
     if (!diff) {
-      reply.code(404).send({ error: `Could not compute diff for '${name}' between versions ${from} and ${to}` });
+      reply
+        .code(404)
+        .send({
+          error: `Could not compute diff for '${name}' between versions ${from} and ${to}`,
+        });
       return;
     }
 
@@ -197,14 +243,19 @@ export const stateModule: FastifyPluginAsync = async (app) => {
   // ── Export / Import ─────────────────────────────────────────────────────
 
   // GET /api/state/appspecs/:name/export
-  app.get<{ Params: { name: string } }>('/appspecs/:name/export', async (request, reply) => {
-    const exported = state.exportAppSpec(request.params.name);
-    if (!exported) {
-      reply.code(404).send({ error: `AppSpec '${request.params.name}' not found` });
-      return;
+  app.get<{ Params: { name: string } }>(
+    '/appspecs/:name/export',
+    async (request, reply) => {
+      const exported = state.exportAppSpec(request.params.name);
+      if (!exported) {
+        reply
+          .code(404)
+          .send({ error: `AppSpec '${request.params.name}' not found` });
+        return;
+      }
+      return exported;
     }
-    return exported;
-  });
+  );
 
   // POST /api/state/appspecs/import
   app.post<{
@@ -220,7 +271,9 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     // Check for name conflict
     const existing = state.getAppSpec(spec.name);
     if (existing) {
-      reply.code(409).send({ error: `AppSpec '${spec.name}' already exists on this VPS` });
+      reply
+        .code(409)
+        .send({ error: `AppSpec '${spec.name}' already exists on this VPS` });
       return;
     }
 
@@ -240,41 +293,53 @@ export const stateModule: FastifyPluginAsync = async (app) => {
         try {
           const container = await findAppContainer(s.name);
           if (container) {
-            return { ...s, containerId: container.id, ports: container.ports, containerStatus: container.status };
+            return {
+              ...s,
+              containerId: container.id,
+              ports: container.ports,
+              containerStatus: container.status,
+            };
           }
-        } catch { /* skip enrichment */ }
+        } catch {
+          /* skip enrichment */
+        }
         return s;
-      }),
+      })
     );
 
     return { states: enriched };
   });
 
   // GET /api/state/apps/:name/state
-  app.get<{ Params: { name: string } }>('/apps/:name/state', async (request, reply) => {
-    const appState = state.getAppState(request.params.name);
-    if (!appState) {
-      reply.code(404).send({ error: `No runtime state for '${request.params.name}'` });
-      return;
-    }
-
-    // Enrich with container info (ports, container ID)
-    try {
-      const container = await findAppContainer(request.params.name);
-      if (container) {
-        return {
-          ...appState,
-          containerId: container.id,
-          ports: container.ports,
-          containerStatus: container.status,
-        };
+  app.get<{ Params: { name: string } }>(
+    '/apps/:name/state',
+    async (request, reply) => {
+      const appState = state.getAppState(request.params.name);
+      if (!appState) {
+        reply
+          .code(404)
+          .send({ error: `No runtime state for '${request.params.name}'` });
+        return;
       }
-    } catch {
-      // Docker unavailable — return state without enrichment
-    }
 
-    return appState;
-  });
+      // Enrich with container info (ports, container ID)
+      try {
+        const container = await findAppContainer(request.params.name);
+        if (container) {
+          return {
+            ...appState,
+            containerId: container.id,
+            ports: container.ports,
+            containerStatus: container.status,
+          };
+        }
+      } catch {
+        // Docker unavailable — return state without enrichment
+      }
+
+      return appState;
+    }
+  );
 
   // POST /api/state/apps/:name/transition
   app.post<{
@@ -292,7 +357,7 @@ export const stateModule: FastifyPluginAsync = async (app) => {
     const result = state.transitionAppState(
       name,
       newState as import('../services/state.js').AppActualState,
-      errorMsg,
+      errorMsg
     );
 
     // Restart health monitoring on transition to 'running' so the monitor
@@ -318,10 +383,16 @@ export const stateModule: FastifyPluginAsync = async (app) => {
   // ── Operations & Version ────────────────────────────────────────────────
 
   // GET /api/state/operations
-  app.get<{ Querystring: { limit?: string } }>('/operations', async (request) => {
-    const limit = Math.min(parseInt(request.query.limit ?? '50', 10) || 50, 200);
-    return { operations: state.getRecentOperations(limit) };
-  });
+  app.get<{ Querystring: { limit?: string } }>(
+    '/operations',
+    async (request) => {
+      const limit = Math.min(
+        parseInt(request.query.limit ?? '50', 10) || 50,
+        200
+      );
+      return { operations: state.getRecentOperations(limit) };
+    }
+  );
 
   // GET /api/state/version
   app.get('/version', async () => {
