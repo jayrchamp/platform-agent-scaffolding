@@ -116,25 +116,11 @@ export class HealthMonitor {
       return;
     }
 
-    // Determine the health check URL based on the container's network:
-    // - platform-net containers: use Docker DNS hostname (container name)
-    // - Kamal/other containers: use localhost + published host port
-    const isOnPlatformNet = container.networkMode === 'platform-net';
-    let url: string;
-
-    if (isOnPlatformNet) {
-      // Same Docker network as the agent — use container name as hostname
-      url = `http://${container.name}:${spec.port}${spec.health.endpoint}`;
-    } else {
-      // Different network (e.g. Kamal's "kamal" network) — use published host port
-      const hostPort = container.ports?.find((p) => p.containerPort === spec.port)?.hostPort;
-      if (!hostPort) {
-        await this.handleFailure(appName, this.monitors.get(appName)!, spec.health.failureThreshold ?? 3,
-          `Container running but no host port mapping for container port ${spec.port}`);
-        return;
-      }
-      url = `http://127.0.0.1:${hostPort}${spec.health.endpoint}`;
-    }
+    // Use the container name as Docker DNS hostname.
+    // Works for both native containers (app-{name}) and Kamal containers
+    // ({name}-web-{sha}) as long as they are connected to platform-net.
+    // The Electron app connects Kamal containers to platform-net after deploy.
+    const url = `http://${container.name}:${spec.port}${spec.health.endpoint}`;
     const timeoutMs = (spec.health.timeoutSeconds ?? 5) * 1000;
     const failureThreshold = spec.health.failureThreshold ?? 3;
 
