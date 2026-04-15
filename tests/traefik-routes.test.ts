@@ -45,6 +45,7 @@ vi.mock('../src/services/traefik.js', () => ({
   getCertificateForDomain: mockGetCertificateForDomain,
   setTraefikPaths: vi.fn(),
   resetTraefikPaths: vi.fn(),
+  initTraefikPaths: vi.fn(),
 }));
 
 vi.mock('../src/services/apps.js', () => ({

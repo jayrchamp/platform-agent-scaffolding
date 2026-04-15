@@ -21,9 +21,10 @@ import yaml from 'js-yaml';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
-const DYNAMIC_DIR = '/opt/platform/traefik/dynamic';
-const ACME_FILE = '/opt/platform/traefik/certs/acme.json';
-const ORIGIN_CERTS_DIR = '/opt/platform/traefik/certs/origin';
+// Default paths — overridden at boot via initTraefikPaths(statePath)
+const DEFAULT_DYNAMIC_DIR = '/opt/platform/traefik/dynamic';
+const DEFAULT_ACME_FILE = '/opt/platform/traefik/certs/acme.json';
+const DEFAULT_ORIGIN_CERTS_DIR = '/opt/platform/traefik/certs/origin';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -79,9 +80,19 @@ interface AcmeStorage {
 
 // ── Override paths for testing ──────────────────────────────────────────────
 
-let dynamicDir = DYNAMIC_DIR;
-let acmeFile = ACME_FILE;
-let originCertsDir = ORIGIN_CERTS_DIR;
+let dynamicDir = DEFAULT_DYNAMIC_DIR;
+let acmeFile = DEFAULT_ACME_FILE;
+let originCertsDir = DEFAULT_ORIGIN_CERTS_DIR;
+
+/**
+ * Initialize traefik paths from statePath (called at agent boot).
+ * Maps /opt/platform/* paths to statePath/traefik/* inside the container.
+ */
+export function initTraefikPaths(statePath: string): void {
+  dynamicDir = join(statePath, 'traefik/dynamic');
+  acmeFile = join(statePath, 'traefik/certs/acme.json');
+  originCertsDir = join(statePath, 'traefik/certs/origin');
+}
 
 export function setTraefikPaths(paths: {
   dynamicDir?: string;
@@ -94,9 +105,9 @@ export function setTraefikPaths(paths: {
 }
 
 export function resetTraefikPaths(): void {
-  dynamicDir = DYNAMIC_DIR;
-  acmeFile = ACME_FILE;
-  originCertsDir = ORIGIN_CERTS_DIR;
+  dynamicDir = DEFAULT_DYNAMIC_DIR;
+  acmeFile = DEFAULT_ACME_FILE;
+  originCertsDir = DEFAULT_ORIGIN_CERTS_DIR;
 }
 
 // ── Route management ───────────────────────────────────────────────────────

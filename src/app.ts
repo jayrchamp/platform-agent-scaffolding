@@ -21,6 +21,7 @@ import { appsModule } from './modules/apps.js';
 import { networkModule } from './modules/network.js';
 import { traefikModule } from './modules/traefik.js';
 import { setBuildsBase } from './services/build.js';
+import { initTraefikPaths } from './services/traefik.js';
 
 // ── Build app ──────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
   // ── Set builds directory from config ──────────────────────────────────
 
   setBuildsBase(config.statePath);
+  initTraefikPaths(config.statePath);
 
   // ── State manager (init directories + load from disk) ──────────────────
 
