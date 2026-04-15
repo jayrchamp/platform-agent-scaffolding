@@ -236,7 +236,7 @@ export async function getCertificates(): Promise<CertificateInfo[]> {
       const domain = cert.domain?.main;
       if (!domain || !cert.certificate) continue;
 
-      const certInfo = parseCertificate(cert.certificate);
+      const certInfo = parseCertificate(cert.certificate, domain);
       if (certInfo) {
         certs.push(certInfo);
       }
@@ -259,10 +259,15 @@ export async function getCertificateForDomain(
 // ── Certificate parsing helpers ────────────────────────────────────────────
 
 /**
- * Parse a base64-encoded PEM certificate to extract subject, issuer, and dates.
- * Uses a lightweight regex approach instead of a full ASN.1 parser.
+ * Parse a base64-encoded PEM certificate to extract issuer and dates.
+ * The domain is taken from the ACME JSON `domain.main` field (the authoritative
+ * source in Traefik), not from the certificate's CN which may differ for
+ * SAN-based or wildcard certs.
  */
-function parseCertificate(certBase64: string): CertificateInfo | null {
+function parseCertificate(
+  certBase64: string,
+  domain: string
+): CertificateInfo | null {
   try {
     const pem = Buffer.from(certBase64, 'base64').toString('utf-8');
 
@@ -270,7 +275,6 @@ function parseCertificate(certBase64: string): CertificateInfo | null {
     const { X509Certificate } = require('node:crypto');
     const x509 = new X509Certificate(pem);
 
-    const domain = extractCN(x509.subject);
     const issuer = extractCN(x509.issuer);
     const notBefore = new Date(x509.validFrom).toISOString();
     const notAfter = new Date(x509.validTo).toISOString();

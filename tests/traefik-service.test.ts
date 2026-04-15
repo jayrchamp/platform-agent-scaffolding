@@ -231,11 +231,6 @@ describe('getCertificates', () => {
   });
 
   it('parses certificates from acme.json', async () => {
-    // Create a self-signed cert for testing
-    const { X509Certificate } = require('node:crypto');
-    const { generateKeyPairSync, createSign } = require('node:crypto');
-
-    // Generate a simple self-signed cert
     const certPem = generateSelfSignedCert('test.example.com');
 
     writeFileSync(
@@ -317,13 +312,34 @@ describe('getCertificateForDomain', () => {
 });
 
 // ── Helper: generate a self-signed certificate for testing ────────────────────
+// Returns a static self-signed PEM certificate so tests don't depend on openssl
+// being installed (it's absent in CI).  The service reads the domain from the
+// ACME JSON `domain.main` field, not from the certificate's CN, so using a
+// single static cert for all test domains is fine.
 
-function generateSelfSignedCert(cn: string): string {
-  const { execSync } = require('node:child_process');
-  // Use openssl to generate a self-signed cert in PEM format
-  const result = execSync(
-    `openssl req -x509 -newkey rsa:1024 -keyout /dev/null -out /dev/stdout -days 365 -nodes -subj "/CN=${cn}" 2>/dev/null`,
-    { encoding: 'utf-8' }
-  );
-  return result;
+function generateSelfSignedCert(_cn: string): string {
+  return STATIC_SELF_SIGNED_PEM;
 }
+
+// A real self-signed X.509 certificate (RSA 2048, valid 2026-2036, CN=localhost).
+const STATIC_SELF_SIGNED_PEM = [
+  '-----BEGIN CERTIFICATE-----',
+  'MIIDCTCCAfGgAwIBAgIUfXtV3OGmvvIwUpmP6hBEHt9WAUcwDQYJKoZIhvcNAQEL',
+  'BQAwFDESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTI2MDQxNTE2MDA0OFoXDTM2MDQx',
+  'MjE2MDA0OFowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEF',
+  'AAOCAQ8AMIIBCgKCAQEAyp1z3SBbbCAJ+NMNieFwE5mJnFl7N9+UVcH0lQQ+8Tti',
+  'h6dNH73+cqDOcDMOTR6NWEoM5XP3bNfxFqk+LGO+MXhpaZfZy3CUy/efPai0REJB',
+  'gQb9DUjZOigHgY0GsYpwzwGybF/IlCU4L88lnK/BtoM00odbfMJs+u+79bfNztkE',
+  'atBODmHM3AddON6Assy56Kc/IH1TjoayRiVTPMGbzy1mZSV2IiP9qUyS4s04o92x',
+  'mHn7wy+LkC73YBccqN8B3ZTvvLsrXhRa9rp+E7oDJOeoADfjizDlb8DzQoFJ1G75',
+  'kQZGerbOI/H6OViWxIIoBOTPZR/KJC6M0B5zRmi1qwIDAQABo1MwUTAdBgNVHQ4E',
+  'FgQUhFbEM5357blMK8cFxfyYdqltpBUwHwYDVR0jBBgwFoAUhFbEM5357blMK8cF',
+  'xfyYdqltpBUwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAG4I1',
+  '6bR83mtUtIDLULrHfGPPa+Bv2wSEE3X43DWUzIvEoSyUiqEHZ5KMOtENNTNttNPS',
+  '/YefrsvtFIlKwJ9MAueKRKZXSjFdEqKn2EfeYyOnpay1TO6/x/yC0h9ju3WPdAUj',
+  'f0O6QbE9Y+cmTMo5bVSxLF5/qeRxfNSS9gwbif1yLZT/w2q2pY1Kg3ytx5IvJmPC',
+  'a+2YlM6rqSHxET9dI0flYvSF/7VgrmP0rLeFFRi87dDT09y7UOWDBosRlTcCri0F',
+  'iMFPToKhyGSEWBbQ8Wwk20RMPY28XJCQUrf/WfwCBOUJnhvoqvpMvwk1iqmsiOc1',
+  '8iKiyJFaQlUKaDrqSw==',
+  '-----END CERTIFICATE-----',
+].join('\n');
