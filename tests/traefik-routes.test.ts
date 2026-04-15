@@ -4,7 +4,15 @@
 // The traefik service (file I/O) is mocked — we only test routing,
 // auth, validation, and response shaping here.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -66,7 +74,9 @@ let app: FastifyInstance;
 
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'platform-traefik-routes-'));
-  setPgPool({ query: vi.fn().mockResolvedValue({ rows: [] }) } as unknown as Pool);
+  setPgPool({
+    query: vi.fn().mockResolvedValue({ rows: [] }),
+  } as unknown as Pool);
 
   const config: AgentConfig = {
     port: 0,
@@ -187,7 +197,7 @@ describe('PUT /api/traefik/routes/:appName', () => {
       'my-app',
       'app.example.com',
       'my-app-web-abc123',
-      3000,
+      3000
     );
   });
 
@@ -232,7 +242,11 @@ describe('PUT /api/traefik/routes/:appName', () => {
       method: 'PUT',
       url: '/api/traefik/routes/my-app',
       headers: { ...HEADERS, 'content-type': 'application/json' },
-      payload: { domain: 'app.example.com', containerName: 'container', port: 99999 },
+      payload: {
+        domain: 'app.example.com',
+        containerName: 'container',
+        port: 99999,
+      },
     });
 
     expect(res.statusCode).toBe(400);
@@ -240,13 +254,19 @@ describe('PUT /api/traefik/routes/:appName', () => {
   });
 
   it('returns 500 when writeRouteConfig fails', async () => {
-    mockWriteRouteConfig.mockRejectedValue(new Error('EACCES permission denied'));
+    mockWriteRouteConfig.mockRejectedValue(
+      new Error('EACCES permission denied')
+    );
 
     const res = await app.inject({
       method: 'PUT',
       url: '/api/traefik/routes/my-app',
       headers: { ...HEADERS, 'content-type': 'application/json' },
-      payload: { domain: 'app.example.com', containerName: 'container', port: 3000 },
+      payload: {
+        domain: 'app.example.com',
+        containerName: 'container',
+        port: 3000,
+      },
     });
 
     expect(res.statusCode).toBe(500);

@@ -5,7 +5,14 @@
 // and mocked acme.json for certificate parsing tests.
 
 import { describe, it, expect, beforeEach, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import yaml from 'js-yaml';
@@ -42,7 +49,12 @@ afterAll(() => {
 
 describe('writeRouteConfig', () => {
   it('creates a valid YAML file with correct structure', async () => {
-    await writeRouteConfig('my-app', 'app.example.com', 'my-app-web-abc123', 3000);
+    await writeRouteConfig(
+      'my-app',
+      'app.example.com',
+      'my-app-web-abc123',
+      3000
+    );
 
     const filePath = join(dynamicDir, 'my-app.yml');
     expect(existsSync(filePath)).toBe(true);
@@ -60,7 +72,9 @@ describe('writeRouteConfig', () => {
     // Check HTTP router with redirect middleware
     expect(routers['my-app-http'].rule).toBe('Host(`app.example.com`)');
     expect(routers['my-app-http'].entryPoints).toEqual(['web']);
-    expect(routers['my-app-http'].middlewares).toEqual(['my-app-redirect-https']);
+    expect(routers['my-app-http'].middlewares).toEqual([
+      'my-app-redirect-https',
+    ]);
 
     // Check services
     const services = (parsed as any).http.services;
@@ -85,7 +99,7 @@ describe('writeRouteConfig', () => {
 
     expect(parsed.http.routers['my-app'].rule).toBe('Host(`new.example.com`)');
     expect(parsed.http.services['my-app'].loadBalancer.servers[0].url).toBe(
-      'http://new-container:8080',
+      'http://new-container:8080'
     );
   });
 
@@ -98,13 +112,20 @@ describe('writeRouteConfig', () => {
   });
 
   it('handles app names with hyphens and numbers', async () => {
-    await writeRouteConfig('my-app-2', 'app2.example.com', 'my-app-2-web-def456', 4000);
+    await writeRouteConfig(
+      'my-app-2',
+      'app2.example.com',
+      'my-app-2-web-def456',
+      4000
+    );
 
     const filePath = join(dynamicDir, 'my-app-2.yml');
     expect(existsSync(filePath)).toBe(true);
 
     const parsed = yaml.load(readFileSync(filePath, 'utf-8')) as any;
-    expect(parsed.http.routers['my-app-2'].rule).toBe('Host(`app2.example.com`)');
+    expect(parsed.http.routers['my-app-2'].rule).toBe(
+      'Host(`app2.example.com`)'
+    );
   });
 });
 
@@ -133,8 +154,18 @@ describe('listRouteConfigs', () => {
   });
 
   it('lists all route configs correctly', async () => {
-    await writeRouteConfig('app-one', 'one.example.com', 'app-one-web-aaa', 3000);
-    await writeRouteConfig('app-two', 'two.example.com', 'app-two-web-bbb', 4000);
+    await writeRouteConfig(
+      'app-one',
+      'one.example.com',
+      'app-one-web-aaa',
+      3000
+    );
+    await writeRouteConfig(
+      'app-two',
+      'two.example.com',
+      'app-two-web-bbb',
+      4000
+    );
 
     const routes = await listRouteConfigs();
     expect(routes).toHaveLength(2);
@@ -192,7 +223,7 @@ describe('getCertificates', () => {
       acmeFile,
       JSON.stringify({
         letsencrypt: { Account: {}, Certificates: [] },
-      }),
+      })
     );
 
     const certs = await getCertificates();
@@ -220,7 +251,7 @@ describe('getCertificates', () => {
             },
           ],
         },
-      }),
+      })
     );
 
     const certs = await getCertificates();
@@ -255,7 +286,7 @@ describe('getCertificateForDomain', () => {
             },
           ],
         },
-      }),
+      })
     );
 
     const cert = await getCertificateForDomain('missing.example.com');
@@ -276,7 +307,7 @@ describe('getCertificateForDomain', () => {
             },
           ],
         },
-      }),
+      })
     );
 
     const cert = await getCertificateForDomain('found.example.com');
@@ -292,7 +323,7 @@ function generateSelfSignedCert(cn: string): string {
   // Use openssl to generate a self-signed cert in PEM format
   const result = execSync(
     `openssl req -x509 -newkey rsa:1024 -keyout /dev/null -out /dev/stdout -days 365 -nodes -subj "/CN=${cn}" 2>/dev/null`,
-    { encoding: 'utf-8' },
+    { encoding: 'utf-8' }
   );
   return result;
 }

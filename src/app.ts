@@ -83,21 +83,24 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
 
   // ── Auth middleware (everything under /api requires Bearer token) ──────
 
-  await app.register(async (authedScope) => {
-    authedScope.addHook('onRequest', authMiddleware(config));
+  await app.register(
+    async (authedScope) => {
+      authedScope.addHook('onRequest', authMiddleware(config));
 
-    // ── Register modules ───────────────────────────────────────────────
+      // ── Register modules ───────────────────────────────────────────────
 
-    await authedScope.register(systemModule, { prefix: '/system' });
-    await authedScope.register(dockerModule, { prefix: '/docker' });
-    await authedScope.register(stateModule, { prefix: '/state' });
-    await authedScope.register(authModule, { prefix: '/auth' });
-    await authedScope.register(agentModule, { prefix: '/agent' });
-    await authedScope.register(postgresModule, { prefix: '/postgres' });
-    await authedScope.register(appsModule, { prefix: '/apps' });
-    await authedScope.register(networkModule, { prefix: '/network' });
-    await authedScope.register(traefikModule, { prefix: '/traefik' });
-  }, { prefix: '/api' });
+      await authedScope.register(systemModule, { prefix: '/system' });
+      await authedScope.register(dockerModule, { prefix: '/docker' });
+      await authedScope.register(stateModule, { prefix: '/state' });
+      await authedScope.register(authModule, { prefix: '/auth' });
+      await authedScope.register(agentModule, { prefix: '/agent' });
+      await authedScope.register(postgresModule, { prefix: '/postgres' });
+      await authedScope.register(appsModule, { prefix: '/apps' });
+      await authedScope.register(networkModule, { prefix: '/network' });
+      await authedScope.register(traefikModule, { prefix: '/traefik' });
+    },
+    { prefix: '/api' }
+  );
 
   return app;
 }

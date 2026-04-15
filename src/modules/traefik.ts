@@ -48,31 +48,41 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
 
     try {
       await writeRouteConfig(appName, domain, containerName, port);
-      app.log.info({ appName, domain, containerName, port }, 'Traefik route created/updated');
+      app.log.info(
+        { appName, domain, containerName, port },
+        'Traefik route created/updated'
+      );
       return { success: true, appName, domain };
     } catch (err) {
       app.log.error(err, `Failed to write Traefik route for ${appName}`);
       reply.code(500).send({
-        error: err instanceof Error ? err.message : 'Failed to write route config',
+        error:
+          err instanceof Error ? err.message : 'Failed to write route config',
       });
     }
   });
 
   // DELETE /api/traefik/routes/:appName — remove a route
-  app.delete<{ Params: { appName: string } }>('/routes/:appName', async (request, reply) => {
-    const { appName } = request.params;
+  app.delete<{ Params: { appName: string } }>(
+    '/routes/:appName',
+    async (request, reply) => {
+      const { appName } = request.params;
 
-    try {
-      await removeRouteConfig(appName);
-      app.log.info({ appName }, 'Traefik route removed');
-      return { success: true, appName };
-    } catch (err) {
-      app.log.error(err, `Failed to remove Traefik route for ${appName}`);
-      reply.code(500).send({
-        error: err instanceof Error ? err.message : 'Failed to remove route config',
-      });
+      try {
+        await removeRouteConfig(appName);
+        app.log.info({ appName }, 'Traefik route removed');
+        return { success: true, appName };
+      } catch (err) {
+        app.log.error(err, `Failed to remove Traefik route for ${appName}`);
+        reply.code(500).send({
+          error:
+            err instanceof Error
+              ? err.message
+              : 'Failed to remove route config',
+        });
+      }
     }
-  });
+  );
 
   // GET /api/traefik/certificates — list all ACME certificates
   app.get('/certificates', async () => {
@@ -81,14 +91,19 @@ export const traefikModule: FastifyPluginAsync = async (app) => {
   });
 
   // GET /api/traefik/certificates/:domain — get certificate for a specific domain
-  app.get<{ Params: { domain: string } }>('/certificates/:domain', async (request, reply) => {
-    const { domain } = request.params;
+  app.get<{ Params: { domain: string } }>(
+    '/certificates/:domain',
+    async (request, reply) => {
+      const { domain } = request.params;
 
-    const cert = await getCertificateForDomain(domain);
-    if (!cert) {
-      reply.code(404).send({ error: `No certificate found for domain '${domain}'` });
-      return;
+      const cert = await getCertificateForDomain(domain);
+      if (!cert) {
+        reply
+          .code(404)
+          .send({ error: `No certificate found for domain '${domain}'` });
+        return;
+      }
+      return cert;
     }
-    return cert;
-  });
+  );
 };

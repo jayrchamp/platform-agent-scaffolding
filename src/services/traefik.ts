@@ -39,8 +39,20 @@ export interface CertificateInfo {
 
 interface TraefikDynamicConfig {
   http?: {
-    routers?: Record<string, { rule?: string; service?: string; entryPoints?: string[]; tls?: { certResolver?: string }; middlewares?: string[] }>;
-    services?: Record<string, { loadBalancer?: { servers?: Array<{ url?: string }> } }>;
+    routers?: Record<
+      string,
+      {
+        rule?: string;
+        service?: string;
+        entryPoints?: string[];
+        tls?: { certResolver?: string };
+        middlewares?: string[];
+      }
+    >;
+    services?: Record<
+      string,
+      { loadBalancer?: { servers?: Array<{ url?: string }> } }
+    >;
     middlewares?: Record<string, unknown>;
   };
 }
@@ -61,7 +73,10 @@ interface AcmeStorage {
 let dynamicDir = DYNAMIC_DIR;
 let acmeFile = ACME_FILE;
 
-export function setTraefikPaths(paths: { dynamicDir?: string; acmeFile?: string }): void {
+export function setTraefikPaths(paths: {
+  dynamicDir?: string;
+  acmeFile?: string;
+}): void {
   if (paths.dynamicDir) dynamicDir = paths.dynamicDir;
   if (paths.acmeFile) acmeFile = paths.acmeFile;
 }
@@ -81,7 +96,7 @@ export async function writeRouteConfig(
   appName: string,
   domain: string,
   containerName: string,
-  port: number,
+  port: number
 ): Promise<void> {
   const config: TraefikDynamicConfig = {
     http: {
@@ -136,7 +151,11 @@ export async function removeRouteConfig(appName: string): Promise<void> {
     await unlink(filePath);
   } catch (err: unknown) {
     // ENOENT is fine — file already gone
-    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'ENOENT'
+    ) {
       return;
     }
     throw err;
@@ -154,7 +173,9 @@ export async function listRouteConfigs(): Promise<TraefikRouteInfo[]> {
     return [];
   }
 
-  const ymlFiles = files.filter((f) => f.endsWith('.yml') && !f.endsWith('.tmp'));
+  const ymlFiles = files.filter(
+    (f) => f.endsWith('.yml') && !f.endsWith('.tmp')
+  );
   const routes: TraefikRouteInfo[] = [];
 
   for (const file of ymlFiles) {
@@ -228,7 +249,9 @@ export async function getCertificates(): Promise<CertificateInfo[]> {
 /**
  * Get certificate info for a specific domain, or null if not found.
  */
-export async function getCertificateForDomain(domain: string): Promise<CertificateInfo | null> {
+export async function getCertificateForDomain(
+  domain: string
+): Promise<CertificateInfo | null> {
   const all = await getCertificates();
   return all.find((c) => c.domain === domain) ?? null;
 }
@@ -252,7 +275,7 @@ function parseCertificate(certBase64: string): CertificateInfo | null {
     const notBefore = new Date(x509.validFrom).toISOString();
     const notAfter = new Date(x509.validTo).toISOString();
     const daysRemaining = Math.floor(
-      (new Date(x509.validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+      (new Date(x509.validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );
 
     return {
