@@ -146,7 +146,38 @@ function createStorageClient(credentialsJson: string): {
 }
 
 function formatGcsErrorMessage(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
+  if (err instanceof Error) {
+    const parts: string[] = [];
+    if (err.message) parts.push(err.message);
+
+    const withCause = err as Error & {
+      code?: string;
+      errno?: string | number;
+      syscall?: string;
+      hostname?: string;
+      cause?: unknown;
+    };
+
+    if (withCause.code) parts.push(`code=${withCause.code}`);
+    if (withCause.errno !== undefined)
+      parts.push(`errno=${String(withCause.errno)}`);
+    if (withCause.syscall) parts.push(`syscall=${withCause.syscall}`);
+    if (withCause.hostname) parts.push(`hostname=${withCause.hostname}`);
+
+    if (withCause.cause && typeof withCause.cause === 'object') {
+      const cause = withCause.cause as {
+        message?: string;
+        code?: string;
+        errno?: string | number;
+      };
+      if (cause.message) parts.push(`cause=${cause.message}`);
+      if (cause.code) parts.push(`causeCode=${cause.code}`);
+      if (cause.errno !== undefined)
+        parts.push(`causeErrno=${String(cause.errno)}`);
+    }
+
+    if (parts.length > 0) return parts.join(' | ');
+  }
 
   if (err && typeof err === 'object' && 'message' in err) {
     const message = (err as { message?: unknown }).message;
