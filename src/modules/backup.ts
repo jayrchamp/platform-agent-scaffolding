@@ -133,8 +133,14 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       dryRun: boolean;
     };
   }>('/restore', async (request, reply) => {
-    const { credentialsJson, bucket, objectPath, database, compressed, dryRun } =
-      request.body ?? {};
+    const {
+      credentialsJson,
+      bucket,
+      objectPath,
+      database,
+      compressed,
+      dryRun,
+    } = request.body ?? {};
 
     if (!credentialsJson) {
       reply.code(400).send({ error: 'credentialsJson is required' });

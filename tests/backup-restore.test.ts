@@ -13,7 +13,7 @@ function buildFakeDump(): string {
     '-- PostgreSQL database dump',
     '',
     'SET statement_timeout = 0;',
-    'SET client_encoding = \'UTF8\';',
+    "SET client_encoding = 'UTF8';",
     '',
     'CREATE TABLE public.users (',
     '    id integer NOT NULL,',
@@ -107,9 +107,8 @@ describe('Restore Runner — dry-run inspection', () => {
         copyFileSync(dumpPath, input.destinationPath);
       });
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     const result = await restoreDatabaseFromGcs(config, {
@@ -154,9 +153,8 @@ describe('Restore Runner — dry-run inspection', () => {
       copyFileSync(dumpPath, input.destinationPath);
     });
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     const result = await restoreDatabaseFromGcs(config, {
@@ -186,9 +184,8 @@ describe('Restore Runner — dry-run inspection', () => {
       copyFileSync(dumpPath, input.destinationPath);
     });
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     const result = await restoreDatabaseFromGcs(config, {
@@ -218,9 +215,8 @@ describe('Restore Runner — validation', () => {
     const gcs = await import('../src/services/backup-gcs.js');
     vi.spyOn(gcs, 'downloadFromGcs').mockImplementation(async () => {});
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     await expect(
@@ -239,9 +235,8 @@ describe('Restore Runner — validation', () => {
     const gcs = await import('../src/services/backup-gcs.js');
     vi.spyOn(gcs, 'downloadFromGcs').mockImplementation(async () => {});
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     await expect(
@@ -264,9 +259,8 @@ describe('Restore Runner — GCS download failure', () => {
       new Error('GCS download failed: 404 Not Found')
     );
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     await expect(
@@ -287,9 +281,8 @@ describe('Restore Runner — GCS download failure', () => {
       new Error('GCS download failed: 403 Forbidden')
     );
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     const result = await restoreDatabaseFromGcs(config, {
@@ -323,9 +316,8 @@ describe('Restore Runner — temp file cleanup', () => {
       copyFileSync(dumpPath, input.destinationPath);
     });
 
-    const { restoreDatabaseFromGcs } = await import(
-      '../src/services/backup-restore-runner.js'
-    );
+    const { restoreDatabaseFromGcs } =
+      await import('../src/services/backup-restore-runner.js');
 
     const config = buildConfig(tmpDir);
     await restoreDatabaseFromGcs(config, {

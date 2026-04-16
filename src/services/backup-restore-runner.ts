@@ -139,10 +139,7 @@ async function inspectDump(
     const trimmed = line.trim();
 
     // CREATE TABLE (not CREATE TABLE ... AS SELECT which is a materialized view)
-    if (
-      /^CREATE TABLE\s/i.test(trimmed) &&
-      !/\bAS\b/i.test(trimmed)
-    ) {
+    if (/^CREATE TABLE\s/i.test(trimmed) && !/\bAS\b/i.test(trimmed)) {
       const match = trimmed.match(
         /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:"?(\w+)"?\.)?"?(\w+)"?/i
       );
@@ -153,10 +150,10 @@ async function inspectDump(
     }
 
     // CREATE VIEW / CREATE MATERIALIZED VIEW
-    if (/^CREATE\s+(?:OR REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s/i.test(trimmed)) {
-      const match = trimmed.match(
-        /VIEW\s+(?:"?(\w+)"?\.)?"?(\w+)"?/i
-      );
+    if (
+      /^CREATE\s+(?:OR REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s/i.test(trimmed)
+    ) {
+      const match = trimmed.match(/VIEW\s+(?:"?(\w+)"?\.)?"?(\w+)"?/i);
       if (match) {
         const name = match[2]!;
         if (!views.includes(name)) views.push(name);
@@ -195,7 +192,15 @@ async function inspectDump(
     }
   }
 
-  return { tables, views, sequences, functions, indexes, triggers, copyStatements };
+  return {
+    tables,
+    views,
+    sequences,
+    functions,
+    indexes,
+    triggers,
+    copyStatements,
+  };
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────
@@ -240,13 +245,39 @@ export async function restoreDatabaseFromGcs(
         ...inspection,
         startedAt,
         endedAt,
-        durationMs:
-          new Date(endedAt).getTime() - new Date(startedAt).getTime(),
+        durationMs: new Date(endedAt).getTime() - new Date(startedAt).getTime(),
       };
     }
 
     // ── Real restore ──
     const warnings: string[] = [];
+
+    // Drop and recreate the public schema to ensure a clean restore.
+    // Without this, tables present in the DB but absent from the dump
+    // would survive the restore (pg_dump plain-SQL format without --clean
+    // only creates, it does not drop).
+    const cleanProcess = spawn(
+      'docker',
+      [
+        'exec',
+        POSTGRES_CONTAINER,
+        'psql',
+        '-U',
+        config.postgres.user,
+        '-d',
+        database,
+        '-v',
+        'ON_ERROR_STOP=1',
+        '-c',
+        `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${config.postgres.user};`,
+      ],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: process.env,
+      }
+    );
+
+    await waitForProcessExit(cleanProcess);
 
     // Pipe the (possibly compressed) SQL dump into psql via docker exec
     const psqlProcess = spawn(

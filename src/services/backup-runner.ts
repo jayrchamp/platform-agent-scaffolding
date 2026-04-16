@@ -113,6 +113,8 @@ export async function runDatabaseBackupToGcs(
       'pg_dump',
       '-U',
       config.postgres.user,
+      '--clean',
+      '--if-exists',
       database,
     ],
     {
