@@ -20,6 +20,7 @@ import { postgresModule } from './modules/postgres.js';
 import { appsModule } from './modules/apps.js';
 import { networkModule } from './modules/network.js';
 import { traefikModule } from './modules/traefik.js';
+import { backupModule } from './modules/backup.js';
 import { setBuildsBase } from './services/build.js';
 import { initTraefikPaths } from './services/traefik.js';
 
@@ -100,6 +101,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
       await authedScope.register(appsModule, { prefix: '/apps' });
       await authedScope.register(networkModule, { prefix: '/network' });
       await authedScope.register(traefikModule, { prefix: '/traefik' });
+      await authedScope.register(backupModule, { prefix: '/backup' });
     },
     { prefix: '/api' }
   );
