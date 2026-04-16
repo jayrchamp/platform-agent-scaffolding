@@ -33,10 +33,10 @@ jobs:
         run: corepack enable
 
       - name: Install dependencies
-        run: yarn install --immutable
+        run: npm install
 
       - name: Run tests
-        run: yarn vitest run
+        run: npm run test
 
   build-and-push:
     needs: test
