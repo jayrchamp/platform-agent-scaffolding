@@ -4,6 +4,7 @@
 // Routes (under /api/backup, require auth):
 //   POST /gcs/test        — validate credentials and test write/delete access
 //   POST /run             — execute a one-off database backup
+//   POST /restore         — restore a database from a GCS backup (or dry-run)
 //   GET  /jobs             — list all backup jobs
 //   GET  /jobs/:id         — get a single backup job
 //   POST /jobs             — create a backup job
@@ -19,6 +20,7 @@
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { testGcsConnection } from '../services/backup-gcs.js';
 import { runDatabaseBackupToGcs } from '../services/backup-runner.js';
+import { restoreDatabaseFromGcs } from '../services/backup-restore-runner.js';
 import {
   BackupJobsStore,
   type BackupJobCreateInput,
@@ -113,6 +115,58 @@ export const backupModule: FastifyPluginAsync = async (app) => {
         prefix,
         database,
         compression,
+      });
+    } catch (err) {
+      backupError(reply, err);
+    }
+  });
+
+  // ── Restore ──────────────────────────────────────────────────────────
+
+  app.post<{
+    Body: {
+      credentialsJson: string;
+      bucket: string;
+      objectPath: string;
+      database: string;
+      compressed: boolean;
+      dryRun: boolean;
+    };
+  }>('/restore', async (request, reply) => {
+    const { credentialsJson, bucket, objectPath, database, compressed, dryRun } =
+      request.body ?? {};
+
+    if (!credentialsJson) {
+      reply.code(400).send({ error: 'credentialsJson is required' });
+      return;
+    }
+
+    if (!bucket) {
+      reply.code(400).send({ error: 'bucket is required' });
+      return;
+    }
+
+    if (!objectPath) {
+      reply.code(400).send({ error: 'objectPath is required' });
+      return;
+    }
+
+    if (!database) {
+      reply.code(400).send({ error: 'database is required' });
+      return;
+    }
+
+    // Restore can be long (download + psql import)
+    request.raw.setTimeout?.(900_000);
+
+    try {
+      return await restoreDatabaseFromGcs(app.config, {
+        credentialsJson,
+        bucket,
+        objectPath,
+        database,
+        compressed: compressed ?? false,
+        dryRun: dryRun ?? false,
       });
     } catch (err) {
       backupError(reply, err);
