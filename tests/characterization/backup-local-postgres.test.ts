@@ -1,45 +1,48 @@
-// ── Characterization: Backup assumes local PostgreSQL ───────────────────────
+// ── Characterization: Backup uses PostgresClient abstraction ────────────────
 //
-// These tests capture the current assumption that pg_dump runs via
-// `docker exec platform-postgres`. When epic 20 introduces PostgresClient
-// abstraction with remote connections, these tests document the "before" state.
+// These tests capture the current architecture where pg_dump/psql are
+// accessed through the PostgresClient abstraction (Epic 20).
+// The POSTGRES_CONTAINER constant now lives in postgres-client.ts
+// (LocalPostgresClient), not in backup-runner.ts.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-// Read source files to assert architectural constants.
-// This is a characterization test — it captures the current design, not
-// runtime behavior.
-
-const AGENT_SRC = resolve(__dirname, '../../src/services/backup-runner.ts');
+const BACKUP_RUNNER_SRC = resolve(
+  __dirname,
+  '../../src/services/backup-runner.ts'
+);
+const PG_CLIENT_SRC = resolve(
+  __dirname,
+  '../../src/services/postgres-client.ts'
+);
 const CONFIG_SRC = resolve(__dirname, '../../src/config.ts');
 
-describe('Characterization: backup uses local postgres container', () => {
-  it('backup-runner.ts exports POSTGRES_CONTAINER = "platform-postgres"', () => {
-    const source = readFileSync(AGENT_SRC, 'utf-8');
+describe('Characterization: backup uses PostgresClient abstraction', () => {
+  it('backup-runner.ts imports getPostgresClient', () => {
+    const source = readFileSync(BACKUP_RUNNER_SRC, 'utf-8');
+    expect(source).toContain('getPostgresClient');
+  });
+
+  it('backup-runner.ts does NOT contain hard-coded POSTGRES_CONTAINER', () => {
+    const source = readFileSync(BACKUP_RUNNER_SRC, 'utf-8');
+    expect(source).not.toContain('POSTGRES_CONTAINER');
+  });
+
+  it('backup-runner.ts uses pgClient.spawnPgDump', () => {
+    const source = readFileSync(BACKUP_RUNNER_SRC, 'utf-8');
+    expect(source).toContain('spawnPgDump');
+  });
+
+  it('postgres-client.ts contains POSTGRES_CONTAINER for local mode', () => {
+    const source = readFileSync(PG_CLIENT_SRC, 'utf-8');
     expect(source).toContain("const POSTGRES_CONTAINER = 'platform-postgres'");
   });
 
-  it('backup-runner.ts uses docker exec with POSTGRES_CONTAINER for pg_dump', () => {
-    const source = readFileSync(AGENT_SRC, 'utf-8');
-    expect(source).toContain("'docker'");
-    expect(source).toContain("'exec',");
-    expect(source).toContain('POSTGRES_CONTAINER,');
-    expect(source).toContain("'pg_dump',");
-  });
-
-  it('backup-runner.ts uses config.postgres.user for pg_dump -U', () => {
-    const source = readFileSync(AGENT_SRC, 'utf-8');
-    expect(source).toContain('config.postgres.user');
-  });
-
-  it('AgentConfig has a postgres section with host/port/user/password', () => {
+  it('AgentConfig has role and postgres.mode fields', () => {
     const source = readFileSync(CONFIG_SRC, 'utf-8');
-    expect(source).toContain('postgres');
-    expect(source).toContain('host');
-    expect(source).toContain('port');
-    expect(source).toContain('user');
-    expect(source).toContain('password');
+    expect(source).toContain('role');
+    expect(source).toContain("mode: 'local' | 'remote'");
   });
 });

@@ -17,8 +17,8 @@ import { createGunzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import type { AgentConfig } from '../config.js';
 import { downloadFromGcs } from './backup-gcs.js';
+import { getPostgresClient } from './postgres-client.js';
 
-const POSTGRES_CONTAINER = 'platform-postgres';
 const DATABASE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -256,49 +256,15 @@ export async function restoreDatabaseFromGcs(
     // Without this, tables present in the DB but absent from the dump
     // would survive the restore (pg_dump plain-SQL format without --clean
     // only creates, it does not drop).
-    const cleanProcess = spawn(
-      'docker',
-      [
-        'exec',
-        POSTGRES_CONTAINER,
-        'psql',
-        '-U',
-        config.postgres.user,
-        '-d',
-        database,
-        '-v',
-        'ON_ERROR_STOP=1',
-        '-c',
-        `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${config.postgres.user};`,
-      ],
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: process.env,
-      }
-    );
+    const pgClient = getPostgresClient();
+    const cleanProcess = pgClient.spawnPsql(database, [
+      '-c',
+      `DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO ${config.postgres.user};`,
+    ]);
 
     await waitForProcessExit(cleanProcess);
 
-    // Pipe the (possibly compressed) SQL dump into psql via docker exec
-    const psqlProcess = spawn(
-      'docker',
-      [
-        'exec',
-        '-i', // stdin must be connected
-        POSTGRES_CONTAINER,
-        'psql',
-        '-U',
-        config.postgres.user,
-        '-d',
-        database,
-        '-v',
-        'ON_ERROR_STOP=1',
-      ],
-      {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: process.env,
-      }
-    );
+    const psqlProcess = pgClient.spawnPsql(database);
 
     if (!psqlProcess.stdin) {
       throw new Error('psql stdin stream is unavailable');

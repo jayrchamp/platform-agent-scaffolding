@@ -21,6 +21,7 @@ export const agentModule: FastifyPluginAsync = async (app) => {
 
     return {
       version: app.config.version,
+      role: app.agentRole,
       uptime: Math.floor(process.uptime()),
       installedAt: meta?.installedAt,
       lastStartedAt: meta?.lastStartedAt,
@@ -31,44 +32,65 @@ export const agentModule: FastifyPluginAsync = async (app) => {
     };
   });
 
-  // POST /api/agent/prepare-update — check if it's safe to update
-  app.post<{ Body: { targetVersion: string } }>('/prepare-update', async (request, reply) => {
-    const { targetVersion } = request.body ?? {};
-
-    if (!targetVersion) {
-      reply.code(400).send({ error: 'targetVersion is required' });
-      return;
-    }
-
-    // Check for running operations that would be interrupted
-    const runningOps = app.stateManager
-      .getRecentOperations(100)
-      .filter((op) => op.status === 'running');
-
-    if (runningOps.length > 0) {
-      return {
-        canUpdate: false,
-        reason: `${runningOps.length} operation(s) still running`,
-        runningOperations: runningOps.map((op) => ({
-          id: op.id,
-          type: op.type,
-          target: op.target,
-          startedAt: op.startedAt,
-        })),
-      };
-    }
-
+  // GET /api/agent/capabilities — role and features for this agent
+  app.get('/capabilities', async () => {
+    const modules = app.loadedModules;
     return {
-      canUpdate: true,
-      currentVersion: app.config.version,
-      targetVersion,
-      message: 'Safe to update — no running operations',
+      role: app.agentRole,
+      modules,
+      features: {
+        postgres: modules.includes('postgres'),
+        apps: modules.includes('apps'),
+        backup: modules.includes('backup'),
+        traefik: modules.includes('traefik'),
+      },
     };
   });
 
+  // POST /api/agent/prepare-update — check if it's safe to update
+  app.post<{ Body: { targetVersion: string } }>(
+    '/prepare-update',
+    async (request, reply) => {
+      const { targetVersion } = request.body ?? {};
+
+      if (!targetVersion) {
+        reply.code(400).send({ error: 'targetVersion is required' });
+        return;
+      }
+
+      // Check for running operations that would be interrupted
+      const runningOps = app.stateManager
+        .getRecentOperations(100)
+        .filter((op) => op.status === 'running');
+
+      if (runningOps.length > 0) {
+        return {
+          canUpdate: false,
+          reason: `${runningOps.length} operation(s) still running`,
+          runningOperations: runningOps.map((op) => ({
+            id: op.id,
+            type: op.type,
+            target: op.target,
+            startedAt: op.startedAt,
+          })),
+        };
+      }
+
+      return {
+        canUpdate: true,
+        currentVersion: app.config.version,
+        targetVersion,
+        message: 'Safe to update — no running operations',
+      };
+    }
+  );
+
   // POST /api/agent/shutdown — graceful shutdown request from Electron
   app.post('/shutdown', async (_request, reply) => {
-    reply.send({ status: 'shutting_down', message: 'Agent will shut down in 2 seconds' });
+    reply.send({
+      status: 'shutting_down',
+      message: 'Agent will shut down in 2 seconds',
+    });
 
     // Delay to let the response be sent, then close
     setTimeout(async () => {

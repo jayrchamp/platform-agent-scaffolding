@@ -10,7 +10,11 @@ import yaml from 'js-yaml';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export type ServerRole = 'full' | 'app' | 'database' | 'worker';
+
 export interface PostgresConfig {
+  /** Access mode: 'local' (docker exec) or 'remote' (TCP) */
+  mode: 'local' | 'remote';
   /** PostgreSQL container hostname (default: platform-postgres on platform-net) */
   host: string;
   /** PostgreSQL port */
@@ -36,6 +40,8 @@ export interface AgentConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   /** Rate limit: max requests per minute per IP */
   rateLimitMax: number;
+  /** Server role — determines which modules to load */
+  role: ServerRole;
   /** PostgreSQL connection config */
   postgres: PostgresConfig;
 }
@@ -48,14 +54,21 @@ interface YamlConfig {
   logging?: { level?: string };
   state?: { path?: string };
   rateLimit?: { maxPerMinute?: number };
-  postgres?: { host?: string; port?: number; user?: string; password?: string };
+  role?: string;
+  postgres?: {
+    mode?: string;
+    host?: string;
+    port?: number;
+    user?: string;
+    password?: string;
+  };
 }
 
 // ── Config paths ───────────────────────────────────────────────────────────
 
 const CONFIG_PATHS = [
-  '/config/agent.yaml',                       // Docker mount (primary)
-  '/opt/platform/agent/config/agent.yaml',    // Host fallback
+  '/config/agent.yaml', // Docker mount (primary)
+  '/opt/platform/agent/config/agent.yaml', // Host fallback
 ];
 
 // ── Loader ─────────────────────────────────────────────────────────────────
@@ -103,6 +116,15 @@ export function loadConfig(): AgentConfig {
 
   const logLevel = env.LOG_LEVEL ?? yamlCfg.logging?.level ?? 'info';
 
+  const role = (env.AGENT_ROLE ?? yamlCfg.role ?? 'full') as ServerRole;
+  const validRoles: ServerRole[] = ['full', 'app', 'database', 'worker'];
+  const resolvedRole = validRoles.includes(role) ? role : 'full';
+
+  const pgMode = (env.PG_MODE ?? yamlCfg.postgres?.mode ?? 'local') as
+    | 'local'
+    | 'remote';
+  const resolvedPgMode = pgMode === 'remote' ? 'remote' : 'local';
+
   return {
     port: toInt(env.AGENT_PORT) ?? yamlCfg.server?.port ?? 3100,
     host: env.AGENT_HOST ?? yamlCfg.server?.host ?? '0.0.0.0',
@@ -110,8 +132,11 @@ export function loadConfig(): AgentConfig {
     version: readVersion(),
     statePath: env.STATE_PATH ?? yamlCfg.state?.path ?? '/var/lib/platform',
     logLevel: isLogLevel(logLevel) ? logLevel : 'info',
-    rateLimitMax: toInt(env.RATE_LIMIT_MAX) ?? yamlCfg.rateLimit?.maxPerMinute ?? 100,
+    rateLimitMax:
+      toInt(env.RATE_LIMIT_MAX) ?? yamlCfg.rateLimit?.maxPerMinute ?? 100,
+    role: resolvedRole,
     postgres: {
+      mode: resolvedPgMode,
       host: env.PG_HOST ?? yamlCfg.postgres?.host ?? 'platform-postgres',
       port: toInt(env.PG_PORT) ?? yamlCfg.postgres?.port ?? 5432,
       user: env.PG_USER ?? yamlCfg.postgres?.user ?? 'platform',

@@ -10,9 +10,9 @@ import { Transform } from 'node:stream';
 import { createGzip } from 'node:zlib';
 import type { AgentConfig } from '../config.js';
 import { createGcsWriteStream } from './backup-gcs.js';
+import { getPostgresClient } from './postgres-client.js';
 
 const DATABASE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
-const POSTGRES_CONTAINER = 'platform-postgres';
 
 export interface RunDatabaseBackupInput {
   credentialsJson: string;
@@ -105,23 +105,8 @@ export async function runDatabaseBackupToGcs(
   const prefix = normalizePrefix(input.prefix);
   const objectPath = buildObjectPath(prefix, database, compression, now);
 
-  const dumpProcess = spawn(
-    'docker',
-    [
-      'exec',
-      POSTGRES_CONTAINER,
-      'pg_dump',
-      '-U',
-      config.postgres.user,
-      '--clean',
-      '--if-exists',
-      database,
-    ],
-    {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
-    }
-  );
+  const pgClient = getPostgresClient();
+  const dumpProcess = pgClient.spawnPgDump(database);
 
   if (!dumpProcess.stdout) {
     throw new Error('pg_dump stdout stream is unavailable');

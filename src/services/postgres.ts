@@ -11,6 +11,12 @@
 
 import { Pool, type PoolConfig } from 'pg';
 import type { PostgresConfig } from '../config.js';
+import {
+  getPostgresClient,
+  setPostgresClient,
+  LocalPostgresClient,
+  type PostgresClient,
+} from './postgres-client.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -122,6 +128,8 @@ export interface ConfigSuggestion {
 export type UserPrivilege = 'readonly' | 'readwrite' | 'admin';
 
 // ── Pool management ────────────────────────────────────────────────────────
+// Now delegated to PostgresClient (see postgres-client.ts).
+// These functions are kept for backward compatibility with existing tests.
 
 let adminPool: Pool | null = null;
 let testPool: Pool | null = null;
@@ -151,12 +159,17 @@ export function resetPgPool(): void {
 }
 
 function getPool(): Pool {
-  const p = testPool ?? adminPool;
-  if (!p)
-    throw new Error(
-      'PostgreSQL pool not initialized. Call initPostgresPool() first.'
-    );
-  return p;
+  // Prefer test pool, then try PostgresClient, then legacy adminPool
+  if (testPool) return testPool;
+  try {
+    return getPostgresClient().getPool();
+  } catch {
+    // PostgresClient not initialized — fall back to legacy pool
+  }
+  if (adminPool) return adminPool;
+  throw new Error(
+    'PostgreSQL pool not initialized. Call initPostgresPool() or setPostgresClient() first.'
+  );
 }
 
 /** Temporary pool for a specific database (table stats, slow queries). */

@@ -3,13 +3,20 @@
 // Creates and configures the Fastify instance with all plugins and modules.
 // Separated from server.ts so tests can import the app without starting a listener.
 
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, {
+  type FastifyInstance,
+  type FastifyPluginAsync,
+} from 'fastify';
 import rateLimit from '@fastify/rate-limit';
 
-import type { AgentConfig } from './config.js';
+import type { AgentConfig, ServerRole } from './config.js';
 import { StateManager } from './services/state.js';
 import { HealthMonitor } from './services/health-monitor.js';
 import { initPostgres } from './services/postgres.js';
+import {
+  createPostgresClient,
+  setPostgresClient,
+} from './services/postgres-client.js';
 import { authMiddleware } from './middleware/auth.js';
 import { systemModule } from './modules/system.js';
 import { dockerModule } from './modules/docker.js';
@@ -24,9 +31,37 @@ import { backupModule } from './modules/backup.js';
 import { setBuildsBase } from './services/build.js';
 import { initTraefikPaths } from './services/traefik.js';
 
+// ── Module loading matrix ──────────────────────────────────────────────────
+
+interface ModuleEntry {
+  module: FastifyPluginAsync;
+  prefix: string;
+  roles: ServerRole[];
+}
+
+const ALL_ROLES: ServerRole[] = ['full', 'app', 'database', 'worker'];
+
+const MODULE_REGISTRY: ModuleEntry[] = [
+  // Universal — loaded for all roles
+  { module: systemModule, prefix: '/system', roles: ALL_ROLES },
+  { module: dockerModule, prefix: '/docker', roles: ALL_ROLES },
+  { module: stateModule, prefix: '/state', roles: ALL_ROLES },
+  { module: authModule, prefix: '/auth', roles: ALL_ROLES },
+  { module: agentModule, prefix: '/agent', roles: ALL_ROLES },
+  { module: networkModule, prefix: '/network', roles: ALL_ROLES },
+  // Conditional
+  { module: postgresModule, prefix: '/postgres', roles: ['full', 'database'] },
+  { module: appsModule, prefix: '/apps', roles: ['full', 'app'] },
+  { module: traefikModule, prefix: '/traefik', roles: ['full', 'app'] },
+  { module: backupModule, prefix: '/backup', roles: ['full', 'database'] },
+];
+
 // ── Build app ──────────────────────────────────────────────────────────────
 
 export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
+  // Default role to 'full' for backward compatibility (tests, legacy configs)
+  const role: ServerRole = config.role || 'full';
+
   const app = Fastify({
     logger: {
       level: config.logLevel,
@@ -63,9 +98,21 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     healthMonitor.stop();
   });
 
-  // ── PostgreSQL pool (non-blocking — connects lazily on first query) ────
+  // ── PostgreSQL client (only for roles that need it) ─────────────────────
 
-  initPostgres(config.postgres);
+  const needsPostgres = role === 'full' || role === 'database';
+  if (needsPostgres) {
+    const pgClient = createPostgresClient({
+      mode: config.postgres.mode ?? 'local',
+      host: config.postgres.host,
+      port: config.postgres.port,
+      user: config.postgres.user,
+      password: config.postgres.password,
+    });
+    setPostgresClient(pgClient);
+    // Legacy init for backward compatibility (existing tests use setPgPool)
+    initPostgres(config.postgres);
+  }
 
   // ── Rate limiting ──────────────────────────────────────────────────────
 
@@ -74,12 +121,22 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
+  // ── Determine active modules for this role ─────────────────────────────
+
+  const activeModules = MODULE_REGISTRY.filter((m) => m.roles.includes(role));
+  const loadedModuleNames = activeModules.map((m) => m.prefix.replace('/', ''));
+
+  // Store role and loaded modules for capabilities endpoint
+  app.decorate('agentRole', role);
+  app.decorate('loadedModules', loadedModuleNames);
+
   // ── Health endpoint (unauthenticated) ──────────────────────────────────
 
   app.get('/health', async () => {
     return {
       status: 'ok',
       version: config.version,
+      role,
       uptime: Math.floor(process.uptime()),
     };
   });
@@ -90,18 +147,11 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     async (authedScope) => {
       authedScope.addHook('onRequest', authMiddleware(config));
 
-      // ── Register modules ───────────────────────────────────────────────
+      // ── Register modules (filtered by role) ────────────────────────────
 
-      await authedScope.register(systemModule, { prefix: '/system' });
-      await authedScope.register(dockerModule, { prefix: '/docker' });
-      await authedScope.register(stateModule, { prefix: '/state' });
-      await authedScope.register(authModule, { prefix: '/auth' });
-      await authedScope.register(agentModule, { prefix: '/agent' });
-      await authedScope.register(postgresModule, { prefix: '/postgres' });
-      await authedScope.register(appsModule, { prefix: '/apps' });
-      await authedScope.register(networkModule, { prefix: '/network' });
-      await authedScope.register(traefikModule, { prefix: '/traefik' });
-      await authedScope.register(backupModule, { prefix: '/backup' });
+      for (const { module, prefix } of activeModules) {
+        await authedScope.register(module, { prefix });
+      }
     },
     { prefix: '/api' }
   );
@@ -116,5 +166,7 @@ declare module 'fastify' {
     config: AgentConfig;
     stateManager: StateManager;
     healthMonitor: HealthMonitor;
+    agentRole: ServerRole;
+    loadedModules: string[];
   }
 }
