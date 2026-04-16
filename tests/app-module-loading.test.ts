@@ -34,6 +34,7 @@ function makeConfig(role: ServerRole, tmpDir: string): AgentConfig {
       user: 'platform',
       password: '',
     },
+    appServers: [],
   };
 }
 
@@ -254,8 +255,8 @@ describe('Agent role=worker', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('loads 6 modules (universal only)', () => {
-    expect(app.loadedModules).toHaveLength(6);
+  it('loads 7 modules (universal + worker)', () => {
+    expect(app.loadedModules).toHaveLength(7);
     expect(app.loadedModules).toEqual(
       expect.arrayContaining([
         'system',
@@ -264,6 +265,7 @@ describe('Agent role=worker', () => {
         'auth',
         'agent',
         'network',
+        'worker',
       ])
     );
     expect(app.loadedModules).not.toContain('postgres');

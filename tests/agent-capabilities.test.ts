@@ -34,6 +34,7 @@ function makeConfig(role: ServerRole, tmpDir: string): AgentConfig {
       user: 'platform',
       password: '',
     },
+    appServers: [],
   };
 }
 
@@ -199,7 +200,7 @@ describe('Capabilities — role=worker', () => {
       backup: false,
       traefik: false,
     });
-    expect(body.modules).toHaveLength(6);
+    expect(body.modules).toHaveLength(7);
   });
 
   it('version endpoint includes role', async () => {

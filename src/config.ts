@@ -25,6 +25,15 @@ export interface PostgresConfig {
   password: string;
 }
 
+export interface AppServerConfig {
+  /** Private IP of the VPS App */
+  host: string;
+  /** Agent port (default: 3100) */
+  port: number;
+  /** Display name for the server */
+  name: string;
+}
+
 export interface AgentConfig {
   /** HTTP port the agent listens on */
   port: number;
@@ -44,6 +53,8 @@ export interface AgentConfig {
   role: ServerRole;
   /** PostgreSQL connection config */
   postgres: PostgresConfig;
+  /** App servers the worker can communicate with (worker role only) */
+  appServers: AppServerConfig[];
 }
 
 // ── YAML config file shape (matches bootstrap-scripts.ts output) ───────────
@@ -62,6 +73,11 @@ interface YamlConfig {
     user?: string;
     password?: string;
   };
+  app_servers?: Array<{
+    host?: string;
+    port?: number;
+    name?: string;
+  }>;
 }
 
 // ── Config paths ───────────────────────────────────────────────────────────
@@ -142,6 +158,11 @@ export function loadConfig(): AgentConfig {
       user: env.PG_USER ?? yamlCfg.postgres?.user ?? 'platform',
       password: env.PG_PASSWORD ?? yamlCfg.postgres?.password ?? '',
     },
+    appServers: (yamlCfg.app_servers ?? []).filter(s => s.host).map(s => ({
+      host: s.host!,
+      port: s.port ?? 3100,
+      name: s.name ?? s.host!,
+    })),
   };
 }
 

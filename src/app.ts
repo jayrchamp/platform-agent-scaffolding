@@ -16,6 +16,7 @@ import { initPostgres } from './services/postgres.js';
 import {
   createPostgresClient,
   setPostgresClient,
+  getPostgresClient,
 } from './services/postgres-client.js';
 import { authMiddleware } from './middleware/auth.js';
 import { systemModule } from './modules/system.js';
@@ -28,8 +29,10 @@ import { appsModule } from './modules/apps.js';
 import { networkModule } from './modules/network.js';
 import { traefikModule } from './modules/traefik.js';
 import { backupModule } from './modules/backup.js';
+import { workerModule } from './modules/worker.js';
 import { setBuildsBase } from './services/build.js';
 import { initTraefikPaths } from './services/traefik.js';
+import { HttpAppServerClient } from './services/app-server-client.js';
 
 // ── Module loading matrix ──────────────────────────────────────────────────
 
@@ -54,6 +57,7 @@ const MODULE_REGISTRY: ModuleEntry[] = [
   { module: appsModule, prefix: '/apps', roles: ['full', 'app'] },
   { module: traefikModule, prefix: '/traefik', roles: ['full', 'app'] },
   { module: backupModule, prefix: '/backup', roles: ['full', 'database'] },
+  { module: workerModule, prefix: '/worker', roles: ['worker'] },
 ];
 
 // ── Build app ──────────────────────────────────────────────────────────────
@@ -100,7 +104,7 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
 
   // ── PostgreSQL client (only for roles that need it) ─────────────────────
 
-  const needsPostgres = role === 'full' || role === 'database';
+  const needsPostgres = role === 'full' || role === 'database' || role === 'worker';
   if (needsPostgres) {
     const pgClient = createPostgresClient({
       mode: config.postgres.mode ?? 'local',
@@ -111,7 +115,9 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     });
     setPostgresClient(pgClient);
     // Legacy init for backward compatibility (existing tests use setPgPool)
-    initPostgres(config.postgres);
+    if (role !== 'worker') {
+      initPostgres(config.postgres);
+    }
   }
 
   // ── Rate limiting ──────────────────────────────────────────────────────
@@ -155,6 +161,28 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
     },
     { prefix: '/api' }
   );
+
+  // ── Worker boot-time connectivity test (non-blocking) ──────────────────
+
+  if (role === 'worker') {
+    setTimeout(async () => {
+      try {
+        const pgClient = getPostgresClient();
+        const available = await pgClient.isAvailable();
+        app.log.info(`[worker] Database connectivity: ${available ? 'OK' : 'FAILED'}`);
+      } catch (err) {
+        app.log.warn(`[worker] Database connectivity check failed: ${err}`);
+      }
+
+      const client = new HttpAppServerClient();
+      for (const server of config.appServers ?? []) {
+        const result = await client.ping(server, config.authToken);
+        app.log.info(
+          `[worker] App server ${server.name} (${server.host}): ${result.reachable ? 'OK' : result.error}`
+        );
+      }
+    }, 2000);
+  }
 
   return app;
 }

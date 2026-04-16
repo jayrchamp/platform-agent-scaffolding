@@ -39,6 +39,7 @@ function makeConfig(role: ServerRole, tmpDir: string): AgentConfig {
       user: 'platform',
       password: '',
     },
+    appServers: [],
   };
 }
 
@@ -275,14 +276,15 @@ describe('Integration: role=worker', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('only universal modules loaded (6)', async () => {
+  it('universal + worker modules loaded (7)', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/agent/capabilities',
       headers,
     });
     const body = res.json();
-    expect(body.modules).toHaveLength(6);
+    expect(body.modules).toHaveLength(7);
+    expect(body.modules).toContain('worker');
     expect(body.features).toEqual({
       postgres: false,
       apps: false,
@@ -305,8 +307,9 @@ describe('Integration: role=worker', () => {
     }
   });
 
-  it('PostgresClient is NOT initialized for worker role', () => {
-    expect(() => getPostgresClient()).toThrow('PostgresClient not initialized');
+  it('PostgresClient IS initialized for worker role (remote mode)', () => {
+    const pgClient = getPostgresClient();
+    expect(pgClient).toBeDefined();
   });
 
   it('docker endpoints still work', async () => {
