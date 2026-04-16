@@ -157,10 +157,12 @@ export class BackupJobsStore {
     if (updates.minuteUtc !== undefined) job.minuteUtc = updates.minuteUtc;
     if (updates.weekDayUtc !== undefined) job.weekDayUtc = updates.weekDayUtc;
     if (updates.cronExpr !== undefined) job.cronExpr = updates.cronExpr;
-    if (updates.retentionDays !== undefined) job.retentionDays = updates.retentionDays;
+    if (updates.retentionDays !== undefined)
+      job.retentionDays = updates.retentionDays;
     if (updates.bucket !== undefined) job.bucket = updates.bucket;
     if (updates.prefix !== undefined) job.prefix = updates.prefix;
-    if (updates.compression !== undefined) job.compression = updates.compression;
+    if (updates.compression !== undefined)
+      job.compression = updates.compression;
     if (updates.enabled !== undefined) job.enabled = updates.enabled;
 
     job.updatedAt = new Date().toISOString();
@@ -218,7 +220,8 @@ export class BackupJobsStore {
       records = records.filter((r) => r.databaseName === opts.database);
     }
     records.sort(
-      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      (a, b) =>
+        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
     );
     if (opts?.limit) {
       records = records.slice(0, opts.limit);
@@ -266,7 +269,11 @@ export class BackupJobsStore {
     }
 
     if (input.frequency === 'weekly') {
-      if (input.weekDayUtc === undefined || input.weekDayUtc < 0 || input.weekDayUtc > 6) {
+      if (
+        input.weekDayUtc === undefined ||
+        input.weekDayUtc < 0 ||
+        input.weekDayUtc > 6
+      ) {
         throw new Error('weekDayUtc (0-6) is required for weekly frequency');
       }
     }

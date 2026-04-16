@@ -150,7 +150,7 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         backupError(reply, err, 404);
       }
-    },
+    }
   );
 
   app.delete<{ Params: { id: string } }>(
@@ -162,7 +162,7 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         backupError(reply, err, 404);
       }
-    },
+    }
   );
 
   app.post<{ Params: { id: string }; Body: { enabled: boolean } }>(
@@ -173,7 +173,7 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         backupError(reply, err, 404);
       }
-    },
+    }
   );
 
   app.post<{ Params: { id: string } }>(
@@ -185,7 +185,7 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         backupError(reply, err, 404);
       }
-    },
+    }
   );
 
   // ── History ──────────────────────────────────────────────────────────
@@ -193,12 +193,14 @@ export const backupModule: FastifyPluginAsync = async (app) => {
   app.get<{ Querystring: { limit?: string; database?: string } }>(
     '/history',
     async (request) => {
-      const limit = request.query.limit ? parseInt(request.query.limit, 10) : undefined;
+      const limit = request.query.limit
+        ? parseInt(request.query.limit, 10)
+        : undefined;
       return jobsStore.listHistory({
         limit,
         database: request.query.database,
       });
-    },
+    }
   );
 
   app.delete<{ Params: { id: string } }>(
@@ -210,7 +212,7 @@ export const backupModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         backupError(reply, err, 404);
       }
-    },
+    }
   );
 
   // ── Scheduler status + credentials ───────────────────────────────────
@@ -225,7 +227,9 @@ export const backupModule: FastifyPluginAsync = async (app) => {
     const { credentialsJson, bucket, prefix } = request.body ?? {};
 
     if (!credentialsJson || !bucket) {
-      reply.code(400).send({ error: 'credentialsJson and bucket are required' });
+      reply
+        .code(400)
+        .send({ error: 'credentialsJson and bucket are required' });
       return;
     }
 

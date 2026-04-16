@@ -149,9 +149,9 @@ describe('BackupJobsStore — Jobs CRUD', () => {
   });
 
   it('throws when updating non-existent job', () => {
-    expect(() =>
-      store.updateJob('nonexistent', { hourUtc: 5 })
-    ).toThrow('not found');
+    expect(() => store.updateJob('nonexistent', { hourUtc: 5 })).toThrow(
+      'not found'
+    );
   });
 });
 

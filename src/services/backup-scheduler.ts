@@ -21,6 +21,7 @@ const TICK_INTERVAL_MS = 30_000;
 export interface QueueEntry {
   jobId: string;
   status: 'queued' | 'running';
+  trigger: 'manual' | 'scheduled';
   queuedAt: string;
   startedAt?: string;
 }
@@ -45,7 +46,7 @@ export class BackupScheduler {
 
   constructor(
     private readonly store: BackupJobsStore,
-    private readonly config: AgentConfig,
+    private readonly config: AgentConfig
   ) {}
 
   // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ export class BackupScheduler {
   setCredentials(
     credentialsJson: string,
     bucket: string,
-    prefix?: string,
+    prefix?: string
   ): void {
     this.credentialsJson = credentialsJson;
     this.defaultBucket = bucket;
@@ -86,7 +87,7 @@ export class BackupScheduler {
 
   // ── Immediate execution ────────────────────────────────────────────────
 
-  enqueueJob(jobId: string): void {
+  enqueueJob(jobId: string, trigger: 'manual' | 'scheduled' = 'manual'): void {
     const job = this.store.getJob(jobId);
     if (!job) throw new Error(`Backup job not found: ${jobId}`);
 
@@ -100,6 +101,7 @@ export class BackupScheduler {
 
     this.queue.push({
       jobId,
+      trigger,
       status: 'queued',
       queuedAt: new Date().toISOString(),
     });
@@ -141,7 +143,7 @@ export class BackupScheduler {
 
     for (const job of jobs) {
       if (this.isDue(job, now)) {
-        this.enqueueJob(job.id);
+        this.enqueueJob(job.id, 'scheduled');
       }
     }
   }
@@ -281,7 +283,7 @@ export class BackupScheduler {
           endedAt: result.endedAt,
           durationMs: result.durationMs,
           status: 'success',
-          trigger: 'scheduled',
+          trigger: entry.trigger,
         };
         this.store.addHistoryRecord(record);
       } else if (job.scope === 'instance') {
@@ -313,7 +315,7 @@ export class BackupScheduler {
           endedAt: result.endedAt,
           durationMs: result.durationMs,
           status: 'success',
-          trigger: 'scheduled',
+          trigger: entry.trigger,
         };
         this.store.addHistoryRecord(record);
       }
@@ -336,7 +338,7 @@ export class BackupScheduler {
         durationMs: Date.now() - new Date(startedAt).getTime(),
         status: 'failed',
         error: errorMsg,
-        trigger: 'scheduled',
+        trigger: entry.trigger,
       };
       this.store.addHistoryRecord(record);
     }
