@@ -86,6 +86,15 @@ export interface BackupJobUpdateInput {
 const MAX_HISTORY = 500;
 const DATABASE_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/;
 
+export interface StorageMetrics {
+  totalBackups: number;
+  totalSizeBytes: number;
+  byDatabase: Record<
+    string,
+    { count: number; sizeBytes: number; oldestAt?: string; newestAt?: string }
+  >;
+}
+
 // ── BackupJobsStore ────────────────────────────────────────────────────────
 
 export class BackupJobsStore {
@@ -247,6 +256,84 @@ export class BackupJobsStore {
     if (idx === -1) throw new Error(`Backup record not found: ${id}`);
     this.history.splice(idx, 1);
     this.persistHistory();
+  }
+
+  // ── Retention ──────────────────────────────────────────────────────────
+
+  /**
+   * Returns successful backup records whose associated job has expired
+   * based on its retentionDays setting. Records without a jobId (manual
+   * backups) are never auto-expired.
+   */
+  getExpiredRecords(): BackupRecord[] {
+    const now = Date.now();
+    const expired: BackupRecord[] = [];
+
+    for (const record of this.history) {
+      if (record.status !== 'success') continue;
+      if (!record.jobId) continue; // manual backups are not auto-expired
+      if (!record.objectPath) continue;
+
+      const job = this.getJob(record.jobId);
+      const retentionDays = job?.retentionDays ?? 14;
+      const retentionMs = retentionDays * 86_400_000;
+      const recordAge = now - new Date(record.endedAt).getTime();
+
+      if (recordAge > retentionMs) {
+        expired.push(record);
+      }
+    }
+
+    return expired;
+  }
+
+  /**
+   * Remove multiple history records by ID in a single persist operation.
+   */
+  deleteHistoryRecords(ids: string[]): void {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    this.history = this.history.filter((r) => !idSet.has(r.id));
+    this.persistHistory();
+  }
+
+  // ── Storage metrics ────────────────────────────────────────────────────
+
+  computeStorageMetrics(): StorageMetrics {
+    const successfulRecords = this.history.filter(
+      (r) => r.status === 'success' && r.objectPath
+    );
+
+    let totalSizeBytes = 0;
+    const byDatabase: Record<
+      string,
+      { count: number; sizeBytes: number; oldestAt?: string; newestAt?: string }
+    > = {};
+
+    for (const record of successfulRecords) {
+      totalSizeBytes += record.sizeBytes;
+
+      const dbName = record.databaseName ?? '_instance';
+      if (!byDatabase[dbName]) {
+        byDatabase[dbName] = { count: 0, sizeBytes: 0 };
+      }
+      const entry = byDatabase[dbName]!;
+      entry.count++;
+      entry.sizeBytes += record.sizeBytes;
+
+      if (!entry.oldestAt || record.endedAt < entry.oldestAt) {
+        entry.oldestAt = record.endedAt;
+      }
+      if (!entry.newestAt || record.endedAt > entry.newestAt) {
+        entry.newestAt = record.endedAt;
+      }
+    }
+
+    return {
+      totalBackups: successfulRecords.length,
+      totalSizeBytes,
+      byDatabase,
+    };
   }
 
   // ── Validation ─────────────────────────────────────────────────────────

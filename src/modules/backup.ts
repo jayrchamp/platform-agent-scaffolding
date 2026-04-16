@@ -296,4 +296,32 @@ export const backupModule: FastifyPluginAsync = async (app) => {
     scheduler.setCredentials(credentialsJson, bucket, prefix);
     return { configured: true };
   });
+
+  // ── Storage metrics ──────────────────────────────────────────────────
+
+  app.get('/metrics', async () => {
+    return jobsStore.computeStorageMetrics();
+  });
+
+  // ── Retention cleanup (manual trigger) ───────────────────────────────
+
+  app.post<{
+    Body: { credentialsJson: string; bucket: string; prefix?: string };
+  }>('/retention/run', async (request, reply) => {
+    const { credentialsJson, bucket, prefix } = request.body ?? {};
+
+    if (!credentialsJson || !bucket) {
+      reply
+        .code(400)
+        .send({ error: 'credentialsJson and bucket are required' });
+      return;
+    }
+
+    // Ensure scheduler has credentials for cleanup
+    scheduler.setCredentials(credentialsJson, bucket, prefix);
+
+    request.raw.setTimeout?.(300_000);
+
+    return scheduler.runRetentionCleanup();
+  });
 };

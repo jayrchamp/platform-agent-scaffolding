@@ -15,8 +15,10 @@ import {
   type BackupRecord,
 } from './backup-jobs.js';
 import { runDatabaseBackupToGcs } from './backup-runner.js';
+import { deleteFromGcs } from './backup-gcs.js';
 
 const TICK_INTERVAL_MS = 30_000;
+const RETENTION_CHECK_INTERVAL_MS = 3_600_000; // 1 hour
 
 export interface QueueEntry {
   jobId: string;
@@ -33,6 +35,14 @@ export interface SchedulerStatus {
   activeJob?: QueueEntry;
   queue: QueueEntry[];
   nextDueAt?: string;
+  lastRetentionCleanup?: RetentionCleanupResult;
+}
+
+export interface RetentionCleanupResult {
+  deletedCount: number;
+  freedBytes: number;
+  errors: string[];
+  ranAt: string;
 }
 
 export class BackupScheduler {
@@ -43,6 +53,8 @@ export class BackupScheduler {
   private credentialsJson: string | null = null;
   private defaultBucket: string | null = null;
   private defaultPrefix: string | null = null;
+  private lastRetentionCheck = 0;
+  private lastRetentionResult: RetentionCleanupResult | null = null;
 
   constructor(
     private readonly store: BackupJobsStore,
@@ -130,6 +142,7 @@ export class BackupScheduler {
       activeJob: this.activeJob ?? undefined,
       queue: [...this.queue],
       nextDueAt,
+      lastRetentionCleanup: this.lastRetentionResult ?? undefined,
     };
   }
 
@@ -146,6 +159,70 @@ export class BackupScheduler {
         this.enqueueJob(job.id, 'scheduled');
       }
     }
+
+    // Run retention cleanup once per hour (non-blocking)
+    if (
+      now.getTime() - this.lastRetentionCheck >=
+      RETENTION_CHECK_INTERVAL_MS
+    ) {
+      this.lastRetentionCheck = now.getTime();
+      this.runRetentionCleanup().catch(() => {
+        // Errors are captured in lastRetentionResult
+      });
+    }
+  }
+
+  // ── Retention cleanup ──────────────────────────────────────────────────
+
+  async runRetentionCleanup(): Promise<RetentionCleanupResult> {
+    const expired = this.store.getExpiredRecords();
+
+    if (expired.length === 0) {
+      const result: RetentionCleanupResult = {
+        deletedCount: 0,
+        freedBytes: 0,
+        errors: [],
+        ranAt: new Date().toISOString(),
+      };
+      this.lastRetentionResult = result;
+      return result;
+    }
+
+    let freedBytes = 0;
+    const errors: string[] = [];
+    const deletedIds: string[] = [];
+
+    for (const record of expired) {
+      try {
+        await deleteFromGcs(
+          this.credentialsJson!,
+          record.bucket,
+          record.objectPath
+        );
+        freedBytes += record.sizeBytes;
+        deletedIds.push(record.id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // If already deleted from GCS (404), still remove the history record
+        if (msg.includes('404') || msg.includes('No such object')) {
+          deletedIds.push(record.id);
+        } else {
+          errors.push(`${record.objectPath}: ${msg}`);
+        }
+      }
+    }
+
+    // Remove history records for successfully deleted objects
+    this.store.deleteHistoryRecords(deletedIds);
+
+    const result: RetentionCleanupResult = {
+      deletedCount: deletedIds.length,
+      freedBytes,
+      errors,
+      ranAt: new Date().toISOString(),
+    };
+    this.lastRetentionResult = result;
+    return result;
   }
 
   // ── Due logic ──────────────────────────────────────────────────────────

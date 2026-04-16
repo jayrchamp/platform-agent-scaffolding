@@ -417,3 +417,287 @@ describe('BackupJobsStore — Persistence', () => {
     expect(store2.listHistory()[0]!.id).toBe('persist-rec');
   });
 });
+
+describe('BackupJobsStore — Retention', () => {
+  it('returns no expired records when none exist', () => {
+    expect(store.getExpiredRecords()).toEqual([]);
+  });
+
+  it('returns no expired records for fresh backups', () => {
+    const job = store.createJob({
+      scope: 'database',
+      databaseName: 'app_db',
+      frequency: 'daily',
+      hourUtc: 3,
+      minuteUtc: 0,
+      retentionDays: 7,
+    });
+
+    store.addHistoryRecord({
+      id: 'fresh-rec',
+      jobId: job.id,
+      scope: 'database',
+      databaseName: 'app_db',
+      bucket: 'b',
+      objectPath: 'p/fresh.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 1000,
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs: 5000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    expect(store.getExpiredRecords()).toEqual([]);
+  });
+
+  it('returns expired records older than retentionDays', () => {
+    const job = store.createJob({
+      scope: 'database',
+      databaseName: 'app_db',
+      frequency: 'daily',
+      hourUtc: 3,
+      minuteUtc: 0,
+      retentionDays: 2,
+    });
+
+    const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000).toISOString();
+
+    store.addHistoryRecord({
+      id: 'old-rec',
+      jobId: job.id,
+      scope: 'database',
+      databaseName: 'app_db',
+      bucket: 'b',
+      objectPath: 'p/old.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 2000,
+      startedAt: threeDaysAgo,
+      endedAt: threeDaysAgo,
+      durationMs: 5000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    const expired = store.getExpiredRecords();
+    expect(expired).toHaveLength(1);
+    expect(expired[0]!.id).toBe('old-rec');
+  });
+
+  it('does not expire manual backups (no jobId)', () => {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+    store.addHistoryRecord({
+      id: 'manual-rec',
+      scope: 'database',
+      databaseName: 'app_db',
+      bucket: 'b',
+      objectPath: 'p/manual.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 1500,
+      startedAt: thirtyDaysAgo,
+      endedAt: thirtyDaysAgo,
+      durationMs: 5000,
+      status: 'success',
+      trigger: 'manual',
+    });
+
+    expect(store.getExpiredRecords()).toEqual([]);
+  });
+
+  it('does not expire failed backups', () => {
+    const job = store.createJob({
+      scope: 'database',
+      databaseName: 'app_db',
+      frequency: 'daily',
+      hourUtc: 3,
+      minuteUtc: 0,
+      retentionDays: 1,
+    });
+
+    const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000).toISOString();
+
+    store.addHistoryRecord({
+      id: 'failed-rec',
+      jobId: job.id,
+      scope: 'database',
+      databaseName: 'app_db',
+      bucket: 'b',
+      objectPath: '',
+      checksumSha256: '',
+      compressed: true,
+      sizeBytes: 0,
+      startedAt: twoDaysAgo,
+      endedAt: twoDaysAgo,
+      durationMs: 5000,
+      status: 'failed',
+      error: 'test error',
+      trigger: 'scheduled',
+    });
+
+    expect(store.getExpiredRecords()).toEqual([]);
+  });
+
+  it('deleteHistoryRecords removes multiple records in one call', () => {
+    for (let i = 0; i < 5; i++) {
+      store.addHistoryRecord({
+        id: `batch-${i}`,
+        scope: 'database',
+        databaseName: 'app_db',
+        bucket: 'b',
+        objectPath: `p/${i}`,
+        checksumSha256: `c${i}`,
+        compressed: true,
+        sizeBytes: 100,
+        startedAt: '2026-04-15T01:00:00Z',
+        endedAt: '2026-04-15T01:00:10Z',
+        durationMs: 10000,
+        status: 'success',
+        trigger: 'scheduled',
+      });
+    }
+
+    expect(store.listHistory()).toHaveLength(5);
+    store.deleteHistoryRecords(['batch-0', 'batch-2', 'batch-4']);
+    expect(store.listHistory()).toHaveLength(2);
+    expect(
+      store
+        .listHistory()
+        .map((r) => r.id)
+        .sort()
+    ).toEqual(['batch-1', 'batch-3']);
+  });
+});
+
+describe('BackupJobsStore — Storage Metrics', () => {
+  it('returns zero metrics when no history exists', () => {
+    const metrics = store.computeStorageMetrics();
+    expect(metrics.totalBackups).toBe(0);
+    expect(metrics.totalSizeBytes).toBe(0);
+    expect(metrics.byDatabase).toEqual({});
+  });
+
+  it('computes metrics across multiple databases', () => {
+    store.addHistoryRecord({
+      id: 'met-1',
+      scope: 'database',
+      databaseName: 'db1',
+      bucket: 'b',
+      objectPath: 'p/db1-1.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 1000,
+      startedAt: '2026-04-14T01:00:00Z',
+      endedAt: '2026-04-14T01:00:10Z',
+      durationMs: 10000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    store.addHistoryRecord({
+      id: 'met-2',
+      scope: 'database',
+      databaseName: 'db1',
+      bucket: 'b',
+      objectPath: 'p/db1-2.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 1500,
+      startedAt: '2026-04-15T01:00:00Z',
+      endedAt: '2026-04-15T01:00:10Z',
+      durationMs: 10000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    store.addHistoryRecord({
+      id: 'met-3',
+      scope: 'database',
+      databaseName: 'db2',
+      bucket: 'b',
+      objectPath: 'p/db2-1.sql.gz',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 2000,
+      startedAt: '2026-04-15T02:00:00Z',
+      endedAt: '2026-04-15T02:00:10Z',
+      durationMs: 10000,
+      status: 'success',
+      trigger: 'manual',
+    });
+
+    const metrics = store.computeStorageMetrics();
+    expect(metrics.totalBackups).toBe(3);
+    expect(metrics.totalSizeBytes).toBe(4500);
+    expect(metrics.byDatabase['db1']!.count).toBe(2);
+    expect(metrics.byDatabase['db1']!.sizeBytes).toBe(2500);
+    expect(metrics.byDatabase['db2']!.count).toBe(1);
+    expect(metrics.byDatabase['db2']!.sizeBytes).toBe(2000);
+  });
+
+  it('ignores failed backups in metrics', () => {
+    store.addHistoryRecord({
+      id: 'met-fail',
+      scope: 'database',
+      databaseName: 'db1',
+      bucket: 'b',
+      objectPath: '',
+      checksumSha256: '',
+      compressed: true,
+      sizeBytes: 0,
+      startedAt: '2026-04-15T01:00:00Z',
+      endedAt: '2026-04-15T01:00:10Z',
+      durationMs: 10000,
+      status: 'failed',
+      error: 'test error',
+      trigger: 'scheduled',
+    });
+
+    const metrics = store.computeStorageMetrics();
+    expect(metrics.totalBackups).toBe(0);
+    expect(metrics.totalSizeBytes).toBe(0);
+  });
+
+  it('tracks oldest and newest dates per database', () => {
+    store.addHistoryRecord({
+      id: 'date-1',
+      scope: 'database',
+      databaseName: 'db1',
+      bucket: 'b',
+      objectPath: 'p/1',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 100,
+      startedAt: '2026-04-10T01:00:00Z',
+      endedAt: '2026-04-10T01:00:10Z',
+      durationMs: 10000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    store.addHistoryRecord({
+      id: 'date-2',
+      scope: 'database',
+      databaseName: 'db1',
+      bucket: 'b',
+      objectPath: 'p/2',
+      checksumSha256: 'c',
+      compressed: true,
+      sizeBytes: 200,
+      startedAt: '2026-04-15T01:00:00Z',
+      endedAt: '2026-04-15T01:00:10Z',
+      durationMs: 10000,
+      status: 'success',
+      trigger: 'scheduled',
+    });
+
+    const metrics = store.computeStorageMetrics();
+    const db1 = metrics.byDatabase['db1']!;
+    expect(db1.oldestAt).toBe('2026-04-10T01:00:10Z');
+    expect(db1.newestAt).toBe('2026-04-15T01:00:10Z');
+  });
+});
