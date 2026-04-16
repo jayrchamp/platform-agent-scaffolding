@@ -53,20 +53,21 @@ import {
   setPgSetting,
   suggestPgSettings,
   MANAGED_PG_PARAMS,
+  testPgConnection,
   type UserPrivilege,
 } from '../services/postgres.js';
 
 // ── Helper ─────────────────────────────────────────────────────────────────
 
 function pgError(reply: FastifyReply, err: unknown, code = 500): void {
-  const message = err instanceof Error ? err.message : 'PostgreSQL operation failed';
+  const message =
+    err instanceof Error ? err.message : 'PostgreSQL operation failed';
   reply.code(code).send({ error: message });
 }
 
 // ── Module ─────────────────────────────────────────────────────────────────
 
 export const postgresModule: FastifyPluginAsync = async (app) => {
-
   // ── Story 6.1 — Databases ─────────────────────────────────────────────
 
   // GET /api/postgres/databases
@@ -79,19 +80,22 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
   });
 
   // GET /api/postgres/databases/:name
-  app.get<{ Params: { name: string } }>('/databases/:name', async (request, reply) => {
-    const { name } = request.params;
-    try {
-      return await getDatabaseDetail(name);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '';
-      if (message.includes('not found')) {
-        reply.code(404).send({ error: message });
-      } else {
-        pgError(reply, err);
+  app.get<{ Params: { name: string } }>(
+    '/databases/:name',
+    async (request, reply) => {
+      const { name } = request.params;
+      try {
+        return await getDatabaseDetail(name);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '';
+        if (message.includes('not found')) {
+          reply.code(404).send({ error: message });
+        } else {
+          pgError(reply, err);
+        }
       }
     }
-  });
+  );
 
   // POST /api/postgres/databases
   app.post<{
@@ -151,7 +155,9 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
 
     try {
       await triggerVacuum(name, schema, table, full);
-      return { message: `VACUUM${full ? ' FULL' : ''} ANALYZE "${schema}"."${table}" completed` };
+      return {
+        message: `VACUUM${full ? ' FULL' : ''} ANALYZE "${schema}"."${table}" completed`,
+      };
     } catch (err) {
       pgError(reply, err);
     }
@@ -178,7 +184,13 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       dryRun?: boolean;
     };
   }>('/users', async (request, reply) => {
-    const { username, password, privilege = 'readwrite', database, dryRun = false } = request.body ?? {};
+    const {
+      username,
+      password,
+      privilege = 'readwrite',
+      database,
+      dryRun = false,
+    } = request.body ?? {};
 
     if (!username) {
       reply.code(400).send({ error: 'username is required' });
@@ -187,7 +199,11 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
 
     const validPrivileges: UserPrivilege[] = ['readonly', 'readwrite', 'admin'];
     if (!validPrivileges.includes(privilege)) {
-      reply.code(400).send({ error: `privilege must be one of: ${validPrivileges.join(', ')}` });
+      reply
+        .code(400)
+        .send({
+          error: `privilege must be one of: ${validPrivileges.join(', ')}`,
+        });
       return;
     }
 
@@ -198,7 +214,9 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       }
 
       if (!password) {
-        reply.code(400).send({ error: 'password is required when dryRun is false' });
+        reply
+          .code(400)
+          .send({ error: 'password is required when dryRun is false' });
         return;
       }
 
@@ -238,7 +256,9 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
     const { newPassword } = request.body ?? {};
 
     if (!newPassword || newPassword.length < 16) {
-      reply.code(400).send({ error: 'newPassword must be at least 16 characters' });
+      reply
+        .code(400)
+        .send({ error: 'newPassword must be at least 16 characters' });
       return;
     }
 
@@ -259,12 +279,21 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       return health;
     } catch (err) {
       // If PG is unreachable, return a degraded health response
-      const message = err instanceof Error ? err.message : 'PostgreSQL unreachable';
+      const message =
+        err instanceof Error ? err.message : 'PostgreSQL unreachable';
       return {
         isRunning: false,
         version: '',
         uptime: '',
-        connections: { active: 0, idle: 0, idleInTransaction: 0, waiting: 0, total: 0, max: 0, usagePercent: 0 },
+        connections: {
+          active: 0,
+          idle: 0,
+          idleInTransaction: 0,
+          waiting: 0,
+          total: 0,
+          max: 0,
+          usagePercent: 0,
+        },
         cacheHitRatio: 0,
         transactions: { commits: 0, rollbacks: 0 },
         databases: 0,
@@ -286,18 +315,21 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
   // ── Story 6.6 — Configuration ─────────────────────────────────────────
 
   // GET /api/postgres/config
-  app.get<{ Querystring: { params?: string } }>('/config', async (request, reply) => {
-    const paramList = request.query.params
-      ? request.query.params.split(',').map((p) => p.trim())
-      : MANAGED_PG_PARAMS;
+  app.get<{ Querystring: { params?: string } }>(
+    '/config',
+    async (request, reply) => {
+      const paramList = request.query.params
+        ? request.query.params.split(',').map((p) => p.trim())
+        : MANAGED_PG_PARAMS;
 
-    try {
-      const settings = await getPgSettings(paramList);
-      return { settings };
-    } catch (err) {
-      pgError(reply, err);
+      try {
+        const settings = await getPgSettings(paramList);
+        return { settings };
+      } catch (err) {
+        pgError(reply, err);
+      }
     }
-  });
+  );
 
   // PATCH /api/postgres/config
   app.patch<{
@@ -310,7 +342,9 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       return;
     }
 
-    if (!MANAGED_PG_PARAMS.includes(name as (typeof MANAGED_PG_PARAMS)[number])) {
+    if (
+      !MANAGED_PG_PARAMS.includes(name as (typeof MANAGED_PG_PARAMS)[number])
+    ) {
       reply.code(400).send({
         error: `Parameter "${name}" is not managed. Allowed: ${MANAGED_PG_PARAMS.join(', ')}`,
       });
@@ -340,20 +374,31 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       const vCpus = parseInt(request.query.vCpus ?? '0', 10);
 
       if (!ramMb || ramMb < 512) {
-        reply.code(400).send({ error: 'ramMb must be a positive integer >= 512' });
+        reply
+          .code(400)
+          .send({ error: 'ramMb must be a positive integer >= 512' });
         return;
       }
 
       if (!vCpus || vCpus < 1) {
-        reply.code(400).send({ error: 'vCpus must be a positive integer >= 1' });
+        reply
+          .code(400)
+          .send({ error: 'vCpus must be a positive integer >= 1' });
         return;
       }
 
       try {
         // Enrich suggestions with current values
         const suggestions = suggestPgSettings(ramMb, vCpus);
-        const currentSettings = await getPgSettings(suggestions.map((s) => s.name));
-        const currentMap = new Map(currentSettings.map((s) => [s.name, s.setting + (s.unit ? s.unit : '')]));
+        const currentSettings = await getPgSettings(
+          suggestions.map((s) => s.name)
+        );
+        const currentMap = new Map(
+          currentSettings.map((s) => [
+            s.name,
+            s.setting + (s.unit ? s.unit : ''),
+          ])
+        );
 
         const enriched = suggestions.map((s) => ({
           ...s,
@@ -364,6 +409,30 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
       } catch (err) {
         pgError(reply, err);
       }
-    },
+    }
   );
+
+  // ── Story 19.4 — Remote connection test ─────────────────────────────────
+
+  // POST /api/postgres/test-connection
+  app.post<{
+    Body: {
+      host: string;
+      port: number;
+      user: string;
+      password: string;
+      database: string;
+    };
+  }>('/test-connection', async (request, reply) => {
+    const { host, port, user, password, database } =
+      request.body ?? ({} as any);
+
+    if (!host || !port || !user || !password || !database) {
+      return reply.status(400).send({
+        error: 'All fields required: host, port, user, password, database',
+      });
+    }
+
+    return testPgConnection({ host, port, user, password, database });
+  });
 };

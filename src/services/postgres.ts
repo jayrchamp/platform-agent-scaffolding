@@ -133,7 +133,7 @@ export function initPostgresPool(config: PostgresConfig): void {
     port: config.port,
     user: config.user,
     password: config.password,
-    database: 'postgres',   // system DB for admin operations
+    database: 'postgres', // system DB for admin operations
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
@@ -152,7 +152,10 @@ export function resetPgPool(): void {
 
 function getPool(): Pool {
   const p = testPool ?? adminPool;
-  if (!p) throw new Error('PostgreSQL pool not initialized. Call initPostgresPool() first.');
+  if (!p)
+    throw new Error(
+      'PostgreSQL pool not initialized. Call initPostgresPool() first.'
+    );
   return p;
 }
 
@@ -197,7 +200,10 @@ const SYSTEM_DATABASES = new Set(['postgres', 'template0', 'template1']);
 /** System users (superusers) to protect from accidental deletion. */
 const SYSTEM_USERS = new Set(['platform', 'postgres']);
 
-function validateIdentifier(name: string, type: 'database' | 'user'): string | null {
+function validateIdentifier(
+  name: string,
+  type: 'database' | 'user'
+): string | null {
   if (!name || name.trim() === '') return `${type} name is required`;
   if (!IDENTIFIER_RE.test(name)) {
     return `${type} name must start with a letter or underscore and contain only letters, numbers, or underscores (max 63 chars)`;
@@ -235,14 +241,14 @@ export async function listDatabases(): Promise<DatabaseInfo[]> {
   return res.rows.map((r) => ({
     name: r.datname,
     owner: r.owner,
-    sizeMb: Math.round(Number(r.size_bytes) / 1024 / 1024 * 100) / 100,
+    sizeMb: Math.round((Number(r.size_bytes) / 1024 / 1024) * 100) / 100,
     connectionLimit: r.datconnlimit,
   }));
 }
 
 export async function dryRunCreateDatabase(
   name: string,
-  owner?: string,
+  owner?: string
 ): Promise<DryRunResult> {
   const steps: DryRunStep[] = [];
   const warnings: string[] = [];
@@ -259,12 +265,20 @@ export async function dryRunCreateDatabase(
   const pool = getPool();
   const existsRes = await pool.query<{ exists: boolean }>(
     'SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1) AS exists',
-    [name],
+    [name]
   );
   const alreadyExists = existsRes.rows[0]?.exists ?? false;
   if (alreadyExists) {
-    steps.push({ label: `Check database "${name}" doesn't exist`, status: 'error' });
-    return { valid: false, sql: '', steps, warnings: [`Database "${name}" already exists`] };
+    steps.push({
+      label: `Check database "${name}" doesn't exist`,
+      status: 'error',
+    });
+    return {
+      valid: false,
+      sql: '',
+      steps,
+      warnings: [`Database "${name}" already exists`],
+    };
   }
   steps.push({ label: `Check database "${name}" doesn't exist`, status: 'ok' });
 
@@ -277,12 +291,14 @@ export async function dryRunCreateDatabase(
     }
     const ownerRes = await pool.query<{ exists: boolean }>(
       'SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1 AND rolcanlogin) AS exists',
-      [owner],
+      [owner]
     );
     const ownerExists = ownerRes.rows[0]?.exists ?? false;
     if (!ownerExists) {
       steps.push({ label: `Validate owner "${owner}"`, status: 'warning' });
-      warnings.push(`User "${owner}" does not exist — database will be owned by the current user`);
+      warnings.push(
+        `User "${owner}" does not exist — database will be owned by the current user`
+      );
     } else {
       steps.push({ label: `Validate owner "${owner}"`, status: 'ok' });
     }
@@ -298,7 +314,7 @@ export async function dryRunCreateDatabase(
 
 export async function createDatabase(
   name: string,
-  owner?: string,
+  owner?: string
 ): Promise<DatabaseInfo> {
   const pool = getPool();
   // Note: identifiers cannot be parameterized in SQL — they must be quoted.
@@ -317,7 +333,7 @@ export async function createDatabase(
             pg_database_size(datname)::text AS size_bytes,
             datconnlimit
      FROM pg_database WHERE datname = $1`,
-    [name],
+    [name]
   );
 
   const r = res.rows[0];
@@ -326,7 +342,7 @@ export async function createDatabase(
   return {
     name: r.datname,
     owner: r.owner,
-    sizeMb: Math.round(Number(r.size_bytes) / 1024 / 1024 * 100) / 100,
+    sizeMb: Math.round((Number(r.size_bytes) / 1024 / 1024) * 100) / 100,
     connectionLimit: r.datconnlimit,
   };
 }
@@ -347,25 +363,33 @@ export async function dryRunDropDatabase(name: string): Promise<DryRunResult> {
   const pool = getPool();
   const existsRes = await pool.query<{ exists: boolean }>(
     'SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1) AS exists',
-    [name],
+    [name]
   );
   const exists = existsRes.rows[0]?.exists ?? false;
   if (!exists) {
     steps.push({ label: `Check database "${name}" exists`, status: 'error' });
-    return { valid: false, sql: '', steps, warnings: [`Database "${name}" does not exist`] };
+    return {
+      valid: false,
+      sql: '',
+      steps,
+      warnings: [`Database "${name}" does not exist`],
+    };
   }
   steps.push({ label: `Check database "${name}" exists`, status: 'ok' });
 
   // Step 3 — Check active connections
   const connRes = await pool.query<{ count: string }>(
     'SELECT count(*) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()',
-    [name],
+    [name]
   );
   const activeConns = parseInt(connRes.rows[0]?.count ?? '0', 10);
   if (activeConns > 0) {
-    steps.push({ label: `Check active connections (${activeConns} found)`, status: 'warning' });
+    steps.push({
+      label: `Check active connections (${activeConns} found)`,
+      status: 'warning',
+    });
     warnings.push(
-      `${activeConns} active connection${activeConns > 1 ? 's' : ''} will be terminated. DROP DATABASE WITH (FORCE) will be used.`,
+      `${activeConns} active connection${activeConns > 1 ? 's' : ''} will be terminated. DROP DATABASE WITH (FORCE) will be used.`
     );
   } else {
     steps.push({ label: 'Check active connections (none)', status: 'ok' });
@@ -373,7 +397,9 @@ export async function dryRunDropDatabase(name: string): Promise<DryRunResult> {
 
   const sql = `DROP DATABASE "${name}" WITH (FORCE);`;
   steps.push({ label: `Execute: ${sql}`, status: 'warning' });
-  warnings.push('This action is irreversible. All data in this database will be permanently deleted.');
+  warnings.push(
+    'This action is irreversible. All data in this database will be permanently deleted.'
+  );
 
   return { valid: true, sql, steps, warnings };
 }
@@ -425,7 +451,7 @@ export async function listUsers(): Promise<UserInfo[]> {
 export async function dryRunCreateUser(
   username: string,
   privilege: UserPrivilege,
-  database?: string,
+  database?: string
 ): Promise<DryRunResult> {
   const steps: DryRunStep[] = [];
   const warnings: string[] = [];
@@ -442,12 +468,20 @@ export async function dryRunCreateUser(
   const pool = getPool();
   const existsRes = await pool.query<{ exists: boolean }>(
     'SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1) AS exists',
-    [username],
+    [username]
   );
   const alreadyExists = existsRes.rows[0]?.exists ?? false;
   if (alreadyExists) {
-    steps.push({ label: `Check user "${username}" doesn't exist`, status: 'error' });
-    return { valid: false, sql: '', steps, warnings: [`User "${username}" already exists`] };
+    steps.push({
+      label: `Check user "${username}" doesn't exist`,
+      status: 'error',
+    });
+    return {
+      valid: false,
+      sql: '',
+      steps,
+      warnings: [`User "${username}" already exists`],
+    };
   }
   steps.push({ label: `Check user "${username}" doesn't exist`, status: 'ok' });
 
@@ -455,21 +489,37 @@ export async function dryRunCreateUser(
   if (database) {
     const dbRes = await pool.query<{ exists: boolean }>(
       'SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1) AS exists',
-      [database],
+      [database]
     );
     const dbExists = dbRes.rows[0]?.exists ?? false;
     if (!dbExists) {
-      steps.push({ label: `Check database "${database}" exists`, status: 'warning' });
-      warnings.push(`Database "${database}" does not exist — privileges cannot be granted`);
+      steps.push({
+        label: `Check database "${database}" exists`,
+        status: 'warning',
+      });
+      warnings.push(
+        `Database "${database}" does not exist — privileges cannot be granted`
+      );
     } else {
-      steps.push({ label: `Check database "${database}" exists`, status: 'ok' });
+      steps.push({
+        label: `Check database "${database}" exists`,
+        status: 'ok',
+      });
     }
   }
 
-  const sql = buildCreateUserSql(username, '<generated-password>', privilege, database);
+  const sql = buildCreateUserSql(
+    username,
+    '<generated-password>',
+    privilege,
+    database
+  );
   steps.push({ label: 'Generate strong password', status: 'ok' });
   steps.push({ label: `Grant ${privilege} privileges`, status: 'ok' });
-  steps.push({ label: `Execute: CREATE ROLE "${username}" LOGIN ...`, status: 'ok' });
+  steps.push({
+    label: `Execute: CREATE ROLE "${username}" LOGIN ...`,
+    status: 'ok',
+  });
 
   return { valid: true, sql, steps, warnings };
 }
@@ -478,7 +528,7 @@ function buildCreateUserSql(
   username: string,
   password: string,
   privilege: UserPrivilege,
-  database?: string,
+  database?: string
 ): string {
   const lines: string[] = [
     `CREATE ROLE "${username}" LOGIN PASSWORD '${password}';`,
@@ -492,14 +542,26 @@ function buildCreateUserSql(
     lines.push(`GRANT CONNECT ON DATABASE "${database}" TO "${username}";`);
     if (privilege === 'readonly') {
       lines.push(`GRANT USAGE ON SCHEMA public TO "${username}";`);
-      lines.push(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${username}";`);
-      lines.push(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${username}";`);
+      lines.push(
+        `GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${username}";`
+      );
+      lines.push(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${username}";`
+      );
     } else if (privilege === 'readwrite') {
       lines.push(`GRANT USAGE ON SCHEMA public TO "${username}";`);
-      lines.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${username}";`);
-      lines.push(`GRANT USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public TO "${username}";`);
-      lines.push(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${username}";`);
-      lines.push(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, UPDATE ON SEQUENCES TO "${username}";`);
+      lines.push(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${username}";`
+      );
+      lines.push(
+        `GRANT USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public TO "${username}";`
+      );
+      lines.push(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${username}";`
+      );
+      lines.push(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, UPDATE ON SEQUENCES TO "${username}";`
+      );
     }
   }
 
@@ -510,7 +572,7 @@ export async function createUser(
   username: string,
   password: string,
   privilege: UserPrivilege,
-  database?: string,
+  database?: string
 ): Promise<UserInfo> {
   const pool = getPool();
 
@@ -523,18 +585,32 @@ export async function createUser(
 
   // Grant privileges on database (if provided)
   if (database) {
-    await pool.query(`GRANT CONNECT ON DATABASE "${database}" TO "${username}"`);
+    await pool.query(
+      `GRANT CONNECT ON DATABASE "${database}" TO "${username}"`
+    );
 
     if (privilege === 'readonly') {
       await pool.query(`GRANT USAGE ON SCHEMA public TO "${username}"`);
-      await pool.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${username}"`);
-      await pool.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${username}"`);
+      await pool.query(
+        `GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${username}"`
+      );
+      await pool.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${username}"`
+      );
     } else if (privilege === 'readwrite') {
       await pool.query(`GRANT USAGE ON SCHEMA public TO "${username}"`);
-      await pool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${username}"`);
-      await pool.query(`GRANT USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public TO "${username}"`);
-      await pool.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${username}"`);
-      await pool.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, UPDATE ON SEQUENCES TO "${username}"`);
+      await pool.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${username}"`
+      );
+      await pool.query(
+        `GRANT USAGE, UPDATE ON ALL SEQUENCES IN SCHEMA public TO "${username}"`
+      );
+      await pool.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${username}"`
+      );
+      await pool.query(
+        `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, UPDATE ON SEQUENCES TO "${username}"`
+      );
     }
   }
 
@@ -548,7 +624,7 @@ export async function createUser(
     rolvaliduntil: string | null;
   }>(
     'SELECT rolname, rolsuper, rolcreatedb, rolcanlogin, rolconnlimit, rolvaliduntil::text FROM pg_roles WHERE rolname = $1',
-    [username],
+    [username]
   );
 
   const r = res.rows[0];
@@ -564,7 +640,10 @@ export async function createUser(
   };
 }
 
-export async function rotatePassword(username: string, newPassword: string): Promise<void> {
+export async function rotatePassword(
+  username: string,
+  newPassword: string
+): Promise<void> {
   const pool = getPool();
   await pool.query(`ALTER ROLE "${username}" PASSWORD $1`, [newPassword]);
 }
@@ -585,25 +664,33 @@ export async function dryRunDropUser(username: string): Promise<DryRunResult> {
   const pool = getPool();
   const existsRes = await pool.query<{ exists: boolean }>(
     'SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1 AND rolcanlogin) AS exists',
-    [username],
+    [username]
   );
   const exists = existsRes.rows[0]?.exists ?? false;
   if (!exists) {
     steps.push({ label: `Check user "${username}" exists`, status: 'error' });
-    return { valid: false, sql: '', steps, warnings: [`User "${username}" does not exist`] };
+    return {
+      valid: false,
+      sql: '',
+      steps,
+      warnings: [`User "${username}" does not exist`],
+    };
   }
   steps.push({ label: `Check user "${username}" exists`, status: 'ok' });
 
   // Step 3 — Check if user owns any databases
   const ownsRes = await pool.query<{ count: string }>(
-    "SELECT count(*) FROM pg_database WHERE pg_get_userbyid(datdba) = $1",
-    [username],
+    'SELECT count(*) FROM pg_database WHERE pg_get_userbyid(datdba) = $1',
+    [username]
   );
   const ownedDbs = parseInt(ownsRes.rows[0]?.count ?? '0', 10);
   if (ownedDbs > 0) {
-    steps.push({ label: `Check owned databases (owns ${ownedDbs})`, status: 'warning' });
+    steps.push({
+      label: `Check owned databases (owns ${ownedDbs})`,
+      status: 'warning',
+    });
     warnings.push(
-      `User "${username}" owns ${ownedDbs} database${ownedDbs > 1 ? 's' : ''}. You must reassign ownership before deleting this user.`,
+      `User "${username}" owns ${ownedDbs} database${ownedDbs > 1 ? 's' : ''}. You must reassign ownership before deleting this user.`
     );
     return { valid: false, sql: '', steps, warnings };
   }
@@ -612,19 +699,26 @@ export async function dryRunDropUser(username: string): Promise<DryRunResult> {
   // Step 4 — Check active connections
   const connRes = await pool.query<{ count: string }>(
     'SELECT count(*) FROM pg_stat_activity WHERE usename = $1 AND pid <> pg_backend_pid()',
-    [username],
+    [username]
   );
   const activeConns = parseInt(connRes.rows[0]?.count ?? '0', 10);
   if (activeConns > 0) {
-    steps.push({ label: `Check active connections (${activeConns} found)`, status: 'warning' });
-    warnings.push(`${activeConns} active connection${activeConns > 1 ? 's' : ''} will be terminated.`);
+    steps.push({
+      label: `Check active connections (${activeConns} found)`,
+      status: 'warning',
+    });
+    warnings.push(
+      `${activeConns} active connection${activeConns > 1 ? 's' : ''} will be terminated.`
+    );
   } else {
     steps.push({ label: 'Check active connections (none)', status: 'ok' });
   }
 
   const sql = `DROP ROLE "${username}";`;
   steps.push({ label: `Execute: ${sql}`, status: 'ok' });
-  warnings.push('This action is irreversible. All privileges granted to this user will be removed.');
+  warnings.push(
+    'This action is irreversible. All privileges granted to this user will be removed.'
+  );
 
   return { valid: true, sql, steps, warnings };
 }
@@ -634,16 +728,14 @@ export async function dropUser(username: string): Promise<void> {
   // Terminate active connections first
   await pool.query(
     'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1 AND pid <> pg_backend_pid()',
-    [username],
+    [username]
   );
   await pool.query(`DROP ROLE IF EXISTS "${username}"`);
 }
 
 // ── Story 6.3 — Database Detail ────────────────────────────────────────────
 
-export async function getDatabaseDetail(
-  name: string,
-): Promise<DatabaseDetail> {
+export async function getDatabaseDetail(name: string): Promise<DatabaseDetail> {
   const adminPgPool = getPool();
 
   // Basic info + connections from admin pool
@@ -661,7 +753,7 @@ export async function getDatabaseDetail(
        d.datconnlimit,
        (SELECT count(*) FROM pg_stat_activity WHERE datname = $1)::text AS active_connections
      FROM pg_database d WHERE d.datname = $1`,
-    [name],
+    [name]
   );
 
   const basic = basicRes.rows[0];
@@ -702,7 +794,7 @@ export async function getDatabaseDetail(
       tables = tableRes.rows.map((r) => ({
         schema: r.schemaname,
         name: r.relname,
-        sizeMb: Math.round(Number(r.size_bytes) / 1024 / 1024 * 100) / 100,
+        sizeMb: Math.round((Number(r.size_bytes) / 1024 / 1024) * 100) / 100,
         rowCount: parseInt(r.row_count, 10),
         lastVacuum: r.last_vacuum,
         lastAnalyze: r.last_analyze,
@@ -710,7 +802,7 @@ export async function getDatabaseDetail(
 
       // Check if pg_stat_statements is available
       const extRes = await dbPool.query<{ exists: boolean }>(
-        "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') AS exists",
+        "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') AS exists"
       );
       hasStatStatements = extRes.rows[0]?.exists ?? false;
 
@@ -747,7 +839,7 @@ export async function getDatabaseDetail(
   return {
     name: basic.datname,
     owner: basic.owner,
-    sizeMb: Math.round(Number(basic.size_bytes) / 1024 / 1024 * 100) / 100,
+    sizeMb: Math.round((Number(basic.size_bytes) / 1024 / 1024) * 100) / 100,
     connectionLimit: basic.datconnlimit,
     activeConnections: parseInt(basic.active_connections, 10),
     tables,
@@ -760,9 +852,10 @@ export async function triggerVacuum(
   database: string,
   schema: string,
   table: string,
-  full = false,
+  full = false
 ): Promise<void> {
-  const dbPool = testPool ?? (pgConfig ? createDbPool(pgConfig, database) : null);
+  const dbPool =
+    testPool ?? (pgConfig ? createDbPool(pgConfig, database) : null);
   if (!dbPool) throw new Error('PostgreSQL not configured');
   const shouldClose = !testPool;
 
@@ -786,7 +879,7 @@ export async function getInstanceHealth(): Promise<InstanceHealth> {
   const version = versionRes.rows[0]?.version ?? '';
 
   const uptimeRes = await pool.query<{ uptime: string }>(
-    "SELECT date_trunc('second', now() - pg_postmaster_start_time())::text AS uptime",
+    "SELECT date_trunc('second', now() - pg_postmaster_start_time())::text AS uptime"
   );
   const uptime = uptimeRes.rows[0]?.uptime ?? '';
 
@@ -848,12 +941,13 @@ export async function getInstanceHealth(): Promise<InstanceHealth> {
 
   // Database count
   const dbCountRes = await pool.query<{ count: string }>(
-    "SELECT count(*)::text FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres', 'template0', 'template1')",
+    "SELECT count(*)::text FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres', 'template0', 'template1')"
   );
   const databases = parseInt(dbCountRes.rows[0]?.count ?? '0', 10);
 
   // Parse version string: "PostgreSQL 16.2 on x86_64-pc-linux-musl, ..."
-  const versionShort = version.match(/PostgreSQL [\d.]+/)?.[0] ?? version.slice(0, 20);
+  const versionShort =
+    version.match(/PostgreSQL [\d.]+/)?.[0] ?? version.slice(0, 20);
 
   return {
     isRunning: true,
@@ -893,35 +987,41 @@ export function clearConnectionHistory(): void {
 }
 
 /** Analyse connection patterns and return recommendations. */
-export function getPoolingRecommendations(history: ConnectionSample[]): string[] {
+export function getPoolingRecommendations(
+  history: ConnectionSample[]
+): string[] {
   if (history.length === 0) return [];
   const recommendations: string[] = [];
 
   const maxUsage = Math.max(...history.map((s) => (s.total / s.max) * 100));
-  const avgUsage = history.reduce((sum, s) => sum + (s.total / s.max) * 100, 0) / history.length;
+  const avgUsage =
+    history.reduce((sum, s) => sum + (s.total / s.max) * 100, 0) /
+    history.length;
 
   if (maxUsage > 90) {
     recommendations.push(
-      `Peak connection usage reached ${maxUsage.toFixed(0)}% of max_connections. Consider upgrading to pgBouncer immediately.`,
+      `Peak connection usage reached ${maxUsage.toFixed(0)}% of max_connections. Consider upgrading to pgBouncer immediately.`
     );
   } else if (maxUsage > 70) {
     recommendations.push(
-      `Connection usage peaked at ${maxUsage.toFixed(0)}%. Plan pgBouncer deployment before reaching 80%.`,
+      `Connection usage peaked at ${maxUsage.toFixed(0)}%. Plan pgBouncer deployment before reaching 80%.`
     );
   }
 
   if (avgUsage > 50) {
     recommendations.push(
-      `Average connection usage is ${avgUsage.toFixed(0)}%. pgBouncer would significantly reduce connection overhead.`,
+      `Average connection usage is ${avgUsage.toFixed(0)}%. pgBouncer would significantly reduce connection overhead.`
     );
   }
 
   const peakHours = history
-    .filter((s) => (s.total / s.max) > 0.7)
+    .filter((s) => s.total / s.max > 0.7)
     .map((s) => new Date(s.timestamp).getUTCHours());
   if (peakHours.length > 0) {
     const uniqueHours = [...new Set(peakHours)].sort((a, b) => a - b);
-    recommendations.push(`High-load periods observed at UTC hours: ${uniqueHours.join(', ')}.`);
+    recommendations.push(
+      `High-load periods observed at UTC hours: ${uniqueHours.join(', ')}.`
+    );
   }
 
   return recommendations;
@@ -960,7 +1060,7 @@ export const MANAGED_PG_PARAMS = [
 export type ManagedPgParam = (typeof MANAGED_PG_PARAMS)[number];
 
 export async function getPgSettings(
-  params: readonly string[] = MANAGED_PG_PARAMS,
+  params: readonly string[] = MANAGED_PG_PARAMS
 ): Promise<PgSetting[]> {
   const pool = getPool();
   const res = await pool.query<{
@@ -981,7 +1081,7 @@ export async function getPgSettings(
      FROM pg_settings
      WHERE name = ANY($1::text[])
      ORDER BY category, name`,
-    [params as string[]],
+    [params as string[]]
   );
 
   return res.rows.map((r) => ({
@@ -1001,7 +1101,7 @@ export async function getPgSettings(
 
 export async function setPgSetting(
   name: string,
-  value: string,
+  value: string
 ): Promise<{ requiresRestart: boolean; pendingRestart: boolean }> {
   if (!MANAGED_PG_PARAMS.includes(name as ManagedPgParam)) {
     throw new Error(`Parameter "${name}" is not in the managed params list`);
@@ -1021,7 +1121,7 @@ export async function setPgSetting(
   // Check pending_restart state
   const res = await pool.query<{ pending_restart: boolean }>(
     'SELECT pending_restart FROM pg_settings WHERE name = $1',
-    [name],
+    [name]
   );
 
   return {
@@ -1031,7 +1131,10 @@ export async function setPgSetting(
 }
 
 /** Suggest optimal parameter values based on available RAM (MB) and vCPUs. */
-export function suggestPgSettings(totalRamMb: number, vCpus: number): ConfigSuggestion[] {
+export function suggestPgSettings(
+  totalRamMb: number,
+  vCpus: number
+): ConfigSuggestion[] {
   const suggestions: ConfigSuggestion[] = [];
 
   // shared_buffers: 25% of RAM (max 8GB)
@@ -1105,4 +1208,63 @@ export function suggestPgSettings(totalRamMb: number, vCpus: number): ConfigSugg
   });
 
   return suggestions;
+}
+
+// ── Remote connection test ────────────────────────────────────────────────
+
+export interface PgTestResult {
+  connected: boolean;
+  serverVersion?: string;
+  error?: string;
+}
+
+export async function testPgConnection(config: {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+}): Promise<PgTestResult> {
+  const pool = new Pool({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password: config.password,
+    database: config.database,
+    max: 1,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 1_000,
+  });
+
+  try {
+    const client = await pool.connect();
+    try {
+      const res = await client.query('SELECT version()');
+      const version = res.rows[0]?.version ?? 'unknown';
+      return { connected: true, serverVersion: version };
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    return { connected: false, error: classifyPgError(err) };
+  } finally {
+    await pool.end();
+  }
+}
+
+export function classifyPgError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const code = (err as any).code;
+
+  if (code === '28P01' || message.includes('password authentication failed'))
+    return 'auth_failure';
+  if (code === '3D000' || message.includes('does not exist'))
+    return 'database_not_found';
+  if (message.includes('ECONNREFUSED')) return 'connection_refused';
+  if (message.includes('timeout') || message.includes('timed out'))
+    return 'timeout';
+  if (message.includes('SSL')) return 'ssl_required';
+  if (message.includes('no pg_hba.conf entry')) return 'pg_hba_rejected';
+
+  return `unknown: ${message}`;
 }
