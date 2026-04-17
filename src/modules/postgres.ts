@@ -32,6 +32,11 @@
 //   GET    /config/suggestions              — auto-suggestions (?ramMb=4096&vCpus=2)
 
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { stat, unlink } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
+import { createGzip, createGunzip } from 'node:zlib';
+import { getPostgresClient } from '../services/postgres-client.js';
 import {
   listDatabases,
   createDatabase,
@@ -199,11 +204,9 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
 
     const validPrivileges: UserPrivilege[] = ['readonly', 'readwrite', 'admin'];
     if (!validPrivileges.includes(privilege)) {
-      reply
-        .code(400)
-        .send({
-          error: `privilege must be one of: ${validPrivileges.join(', ')}`,
-        });
+      reply.code(400).send({
+        error: `privilege must be one of: ${validPrivileges.join(', ')}`,
+      });
       return;
     }
 
@@ -435,4 +438,199 @@ export const postgresModule: FastifyPluginAsync = async (app) => {
 
     return testPgConnection({ host, port, user, password, database });
   });
+
+  // ── Story 23.2 — Migration endpoints ──────────────────────────────────
+
+  // POST /api/postgres/dump-roles
+  // Returns global roles SQL (pg_dumpall --roles-only)
+  app.post('/dump-roles', async (_request, reply) => {
+    try {
+      const pgClient = getPostgresClient();
+      const proc = pgClient.spawnPgDump('postgres', []);
+      // We need pg_dumpall for roles, but we use the client's spawn method
+      // Actually, we run pg_dumpall via exec since spawnPgDump is per-database
+      const chunks: Buffer[] = [];
+      const { spawn } = await import('node:child_process');
+      const mode = pgClient.mode;
+
+      let dumpProc;
+      if (mode === 'local') {
+        dumpProc = spawn(
+          'docker',
+          [
+            'exec',
+            'platform-postgres',
+            'pg_dumpall',
+            '-U',
+            'platform',
+            '--roles-only',
+          ],
+          { stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+      } else {
+        const connInfo = pgClient.getConnectionInfo();
+        dumpProc = spawn(
+          'pg_dumpall',
+          [
+            '-h',
+            connInfo.host,
+            '-p',
+            String(connInfo.port),
+            '-U',
+            'platform',
+            '--roles-only',
+          ],
+          { stdio: ['ignore', 'pipe', 'pipe'] }
+        );
+      }
+      // Kill the unused proc from above
+      proc.kill();
+
+      for await (const chunk of dumpProc.stdout!) {
+        chunks.push(Buffer.from(chunk));
+      }
+
+      const exitCode = await new Promise<number>((resolve) => {
+        dumpProc.on('close', (code) => resolve(code ?? 1));
+      });
+
+      if (exitCode !== 0) {
+        return reply
+          .code(500)
+          .send({ error: 'pg_dumpall --roles-only failed' });
+      }
+
+      return { sql: Buffer.concat(chunks).toString('utf-8') };
+    } catch (err) {
+      pgError(reply, err);
+    }
+  });
+
+  // POST /api/postgres/dump-to-file { database, outputPath, compress }
+  app.post<{
+    Body: { database: string; outputPath: string; compress?: boolean };
+  }>('/dump-to-file', async (request, reply) => {
+    const { database, outputPath, compress } = request.body ?? ({} as any);
+
+    if (!database || !outputPath) {
+      return reply
+        .code(400)
+        .send({ error: 'database and outputPath are required' });
+    }
+
+    if (!outputPath.startsWith('/tmp/migration-')) {
+      return reply
+        .code(400)
+        .send({ error: 'outputPath must start with /tmp/migration-' });
+    }
+
+    try {
+      const pgClient = getPostgresClient();
+      const dumpProc = pgClient.spawnPgDump(database);
+
+      if (compress) {
+        await pipeline(
+          dumpProc.stdout!,
+          createGzip(),
+          createWriteStream(outputPath)
+        );
+      } else {
+        await pipeline(dumpProc.stdout!, createWriteStream(outputPath));
+      }
+
+      const stats = await stat(outputPath);
+      return { path: outputPath, sizeBytes: stats.size };
+    } catch (err) {
+      pgError(reply, err);
+    }
+  });
+
+  // POST /api/postgres/restore-from-file { database, inputPath, compressed }
+  app.post<{
+    Body: { database: string; inputPath: string; compressed?: boolean };
+  }>('/restore-from-file', async (request, reply) => {
+    const { database, inputPath, compressed } = request.body ?? ({} as any);
+
+    if (!database || !inputPath) {
+      return reply
+        .code(400)
+        .send({ error: 'database and inputPath are required' });
+    }
+
+    if (!inputPath.startsWith('/tmp/migration-')) {
+      return reply
+        .code(400)
+        .send({ error: 'inputPath must start with /tmp/migration-' });
+    }
+
+    try {
+      const pgClient = getPostgresClient();
+      const psqlProc = pgClient.spawnPsql(database);
+
+      const readStream = createReadStream(inputPath);
+      if (compressed) {
+        await pipeline(readStream, createGunzip(), psqlProc.stdin!);
+      } else {
+        await pipeline(readStream, psqlProc.stdin!);
+      }
+
+      const exitCode = await new Promise<number>((resolve) => {
+        psqlProc.on('close', (code) => resolve(code ?? 1));
+      });
+
+      if (exitCode !== 0) {
+        return reply
+          .code(500)
+          .send({ error: `psql restore failed with exit code ${exitCode}` });
+      }
+
+      return { success: true };
+    } catch (err) {
+      pgError(reply, err);
+    }
+  });
+
+  // POST /api/postgres/exec-sql { sql }
+  app.post<{ Body: { sql: string } }>('/exec-sql', async (request, reply) => {
+    const { sql } = request.body ?? ({} as any);
+
+    if (!sql) {
+      return reply.code(400).send({ error: 'sql is required' });
+    }
+
+    try {
+      const pgClient = getPostgresClient();
+      await pgClient.query(sql);
+      return { success: true };
+    } catch (err) {
+      pgError(reply, err);
+    }
+  });
+
+  // POST /api/postgres/cleanup-temp { path }
+  app.post<{ Body: { path: string } }>(
+    '/cleanup-temp',
+    async (request, reply) => {
+      const { path: filePath } = request.body ?? ({} as any);
+
+      if (!filePath) {
+        return reply.code(400).send({ error: 'path is required' });
+      }
+
+      if (!filePath.startsWith('/tmp/migration-')) {
+        return reply
+          .code(400)
+          .send({
+            error: 'Can only cleanup migration temp files (/tmp/migration-*)',
+          });
+      }
+
+      try {
+        await unlink(filePath);
+        return { success: true };
+      } catch (err) {
+        pgError(reply, err);
+      }
+    }
+  );
 };

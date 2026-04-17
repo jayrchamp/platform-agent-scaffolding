@@ -58,9 +58,7 @@ describe('Worker module — role=worker', () => {
 
     app = await buildApp(
       makeConfig('worker', tmpDir, {
-        appServers: [
-          { host: '10.114.0.2', port: 3100, name: 'my-app' },
-        ],
+        appServers: [{ host: '10.114.0.2', port: 3100, name: 'my-app' }],
       })
     );
 

@@ -158,11 +158,13 @@ export function loadConfig(): AgentConfig {
       user: env.PG_USER ?? yamlCfg.postgres?.user ?? 'platform',
       password: env.PG_PASSWORD ?? yamlCfg.postgres?.password ?? '',
     },
-    appServers: (yamlCfg.app_servers ?? []).filter(s => s.host).map(s => ({
-      host: s.host!,
-      port: s.port ?? 3100,
-      name: s.name ?? s.host!,
-    })),
+    appServers: (yamlCfg.app_servers ?? [])
+      .filter((s) => s.host)
+      .map((s) => ({
+        host: s.host!,
+        port: s.port ?? 3100,
+        name: s.name ?? s.host!,
+      })),
   };
 }
 

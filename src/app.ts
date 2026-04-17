@@ -104,7 +104,8 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
 
   // ── PostgreSQL client (only for roles that need it) ─────────────────────
 
-  const needsPostgres = role === 'full' || role === 'database' || role === 'worker';
+  const needsPostgres =
+    role === 'full' || role === 'database' || role === 'worker';
   if (needsPostgres) {
     const pgClient = createPostgresClient({
       mode: config.postgres.mode ?? 'local',
@@ -169,7 +170,9 @@ export async function buildApp(config: AgentConfig): Promise<FastifyInstance> {
       try {
         const pgClient = getPostgresClient();
         const available = await pgClient.isAvailable();
-        app.log.info(`[worker] Database connectivity: ${available ? 'OK' : 'FAILED'}`);
+        app.log.info(
+          `[worker] Database connectivity: ${available ? 'OK' : 'FAILED'}`
+        );
       } catch (err) {
         app.log.warn(`[worker] Database connectivity check failed: ${err}`);
       }

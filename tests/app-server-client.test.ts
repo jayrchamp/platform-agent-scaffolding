@@ -37,7 +37,9 @@ describe('HttpAppServerClient', () => {
     });
 
     it('returns unreachable with error on failure', async () => {
-      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Connection refused'));
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValue(new Error('Connection refused'));
 
       const result = await client.ping(mockServer, 'test-token');
 
