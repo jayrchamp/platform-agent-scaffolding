@@ -11,13 +11,16 @@ set -e
 STATE_PATH="${STATE_PATH:-/data}"
 
 # ── Fix volume ownership ────────────────────────────────────────────────────
-# Only chown the specific subdirectories the agent writes to.
+# Create all directories the agent writes to and set ownership.
 # NEVER chown $STATE_PATH recursively — it's /opt/platform which also contains
 # postgres/data (owned by UID 70), traefik/certs, etc.
-mkdir -p "$STATE_PATH/appspecs" 2>/dev/null || true
-mkdir -p "$STATE_PATH/builds" 2>/dev/null || true
-chown -R agent:agent "$STATE_PATH/appspecs" 2>/dev/null || true
-chown -R agent:agent "$STATE_PATH/builds" 2>/dev/null || true
+for dir in appspecs builds locks backups; do
+  mkdir -p "$STATE_PATH/$dir"
+  chown agent:agent "$STATE_PATH/$dir"
+done
+# Agent also writes files directly in $STATE_PATH (agent.yaml, operations.log)
+touch "$STATE_PATH/agent.yaml" "$STATE_PATH/operations.log"
+chown agent:agent "$STATE_PATH/agent.yaml" "$STATE_PATH/operations.log"
 chown -R agent:agent /logs 2>/dev/null || true
 
 # ── Docker socket access ────────────────────────────────────────────────────
