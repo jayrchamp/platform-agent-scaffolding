@@ -111,7 +111,12 @@ export class HealthMonitor {
       // No running container — mark unhealthy if currently tracked
       const monitor = this.monitors.get(appName);
       if (monitor) {
-        await this.handleFailure(appName, monitor, spec.health.failureThreshold ?? 3, 'No running container found');
+        await this.handleFailure(
+          appName,
+          monitor,
+          spec.health.failureThreshold ?? 3,
+          'No running container found'
+        );
       }
       return;
     }
@@ -146,7 +151,12 @@ export class HealthMonitor {
         }
       } else {
         // ── Unhealthy ──
-        await this.handleFailure(appName, monitor, failureThreshold, 'HTTP check returned non-2xx');
+        await this.handleFailure(
+          appName,
+          monitor,
+          failureThreshold,
+          'HTTP check returned non-2xx'
+        );
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Health check error';
@@ -158,7 +168,7 @@ export class HealthMonitor {
     appName: string,
     monitor: AppMonitor,
     threshold: number,
-    message: string,
+    message: string
   ): Promise<void> {
     monitor.consecutiveFailures++;
 
@@ -182,19 +192,42 @@ export class HealthMonitor {
 
   private httpGet(url: string, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
-      const parsed = new URL(url);
+      // Parse URL components manually — new URL() rejects hostnames that look
+      // like partial IP addresses (e.g. "test-app2-web-0.1.7" where ".7" is
+      // treated as an IP segment). This happens with Kamal containers named
+      // with semver tags.
+      let hostname: string;
+      let port: number;
+      let path: string;
+      try {
+        const parsed = new URL(url);
+        hostname = parsed.hostname;
+        port = parsed.port ? parseInt(parsed.port, 10) : 80;
+        path = parsed.pathname + parsed.search;
+      } catch {
+        // Fallback: extract components with regex when URL parser rejects the hostname
+        const match = url.match(/^https?:\/\/([^:/]+)(?::(\d+))?(\/.*)?$/);
+        if (!match) {
+          resolve(false);
+          return;
+        }
+        hostname = match[1];
+        port = match[2] ? parseInt(match[2], 10) : 80;
+        path = match[3] || '/';
+      }
+
       const req = http.get(
         {
-          hostname: parsed.hostname,
-          port: parsed.port ? parseInt(parsed.port, 10) : 80,
-          path: parsed.pathname + parsed.search,
+          hostname,
+          port,
+          path,
           timeout: timeoutMs,
         },
         (res) => {
           // 2xx = healthy
           resolve((res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300);
           res.resume(); // drain response to free socket
-        },
+        }
       );
 
       req.on('timeout', () => {
